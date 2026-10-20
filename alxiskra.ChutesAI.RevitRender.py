@@ -793,15 +793,15 @@ DEFAULT_POS_TEMPLATES = [
         "name": u"Зимнее окружение",
         "text": u"Photorealistic winter architectural render, fresh snow on ground and trees, crisp cold morning light, warm cozy interior lighting, preserve exact building geometry",
     },
-      {
+    {
         "name": u"Кадр 1 — геометрия из Revit, Кадр 2 — референс материалов/погоды/стиля",
         "text": u"Use image 1 as the strict base 3D building geometry, camera angle, and perspective. Apply the facade materials, lighting, and winter atmosphere from image 2 to the building in image 1.",
     },
-      {
+    {
         "name": u"Кадр 1 — тонированный вид из Revit, Кадр 2 — контурный вид тих же стен, Кадр 3 — фото-референс стиля",
         "text": u"Transform the 3D CAD view in image 1 into a photorealistic architectural render, strictly preserving the exact structural lines from image 2 and matching the architectural style, materials, and lighting of image 3.",
     },
-      {
+    {
         "name": u"Замена или вставка объекта из одного кадра в другой",
         "text": u"Keep the exact room interior geometry from image 1, and place the furniture style and materials from image 2 into the room.",
     },
