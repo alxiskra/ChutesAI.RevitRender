@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Dynamo Python Node (Revit 2020 / 2022 / 2023+) — Минималистичная студия AI-рендера 3D-видов (v3.7)
+Dynamo Python Node (Revit 2020 / 2022 / 2023+) — Минималистичная студия AI-рендера 3D-видов (v3.8)
 через Chutes.ai (Qwen-Image-Edit-2511, Qwen-Image-2512, z-image-turbo, imageclassic)
 и совместимые API.
 
@@ -898,6 +898,8 @@ def _ensure_profile_defaults(data_dict):
         data_dict["system_prompt"] = DEFAULT_SYSTEM_PROMPT
     if "use_system_prompt" not in data_dict:
         data_dict["use_system_prompt"] = False
+    if "ui_dark_mode" not in data_dict:
+        data_dict["ui_dark_mode"] = False
     if "prompt_templates" not in data_dict or not isinstance(data_dict["prompt_templates"], list) or len(data_dict["prompt_templates"]) == 0:
         data_dict["prompt_templates"] = list(DEFAULT_POS_TEMPLATES)
     if "neg_prompt_templates" not in data_dict or not isinstance(data_dict["neg_prompt_templates"], list) or len(data_dict["neg_prompt_templates"]) == 0:
@@ -2022,6 +2024,64 @@ def send_image_generation_request(endpoint_url, api_key, payload_dict, out_dir, 
 # ==============================================================================
 
 
+def apply_button_hover(btn, bg_color, border_color=None):
+    """Настраивает аккуратную подсветку плоской кнопки WinForms при наведении и нажатии (Revit 2020 / 2022+)."""
+    if btn is None or bg_color is None:
+        return
+    try:
+        btn.BackColor = bg_color
+        r, g, b = int(bg_color.R), int(bg_color.G), int(bg_color.B)
+        lum = (r * 299 + g * 587 + b * 114) // 1000
+        if lum > 215:
+            if b > r + 8:
+                hov = Color.FromArgb(max(0, r - 18), max(0, g - 12), max(0, b - 2))
+                prs = Color.FromArgb(max(0, r - 34), max(0, g - 24), max(0, b - 6))
+            else:
+                hov = Color.FromArgb(max(0, r - 13), max(0, g - 11), max(0, b - 7))
+                prs = Color.FromArgb(max(0, r - 25), max(0, g - 21), max(0, b - 15))
+        elif lum > 85:
+            hov = Color.FromArgb(min(255, r + 18), min(255, g + 18), min(255, b + 20))
+            prs = Color.FromArgb(max(0, r - 15), max(0, g - 15), max(0, b - 15))
+        else:
+            hov = Color.FromArgb(min(255, r + 22), min(255, g + 25), min(255, b + 32))
+            prs = Color.FromArgb(max(0, r + 8), max(0, g + 10), max(0, b + 14))
+        btn.FlatAppearance.MouseOverBackColor = hov
+        btn.FlatAppearance.MouseDownBackColor = prs
+        if border_color is not None:
+            btn.FlatAppearance.BorderColor = border_color
+    except Exception:
+        pass
+
+
+def style_subdialog_controls(dlg, is_dark=False):
+    """Применяет аккуратный hover к кнопкам модальных под-окон и синхронизирует светлую/тёмную тему."""
+    if dlg is None:
+        return
+    try:
+        if is_dark:
+            dlg.BackColor = Color.FromArgb(22, 27, 36)
+        for ctrl in dlg.Controls:
+            if isinstance(ctrl, Button):
+                bg = ctrl.BackColor
+                if is_dark:
+                    if int(bg.R) == 255 and int(bg.G) == 255 and int(bg.B) == 255:
+                        bg = Color.FromArgb(32, 39, 52)
+                        if int(ctrl.ForeColor.R) < 120 and int(ctrl.ForeColor.B) < 150:
+                            ctrl.ForeColor = Color.FromArgb(226, 232, 240)
+                    elif int(bg.R) == 239 and int(bg.G) == 246 and int(bg.B) == 255:
+                        bg = Color.FromArgb(30, 58, 95)
+                        ctrl.ForeColor = Color.FromArgb(96, 165, 250)
+                brd = Color.FromArgb(56, 68, 89) if (is_dark and int(bg.R) < 40 and int(bg.B) < 100) else bg
+                apply_button_hover(ctrl, bg, brd)
+            elif is_dark and isinstance(ctrl, (TextBox, ListBox)):
+                ctrl.BackColor = Color.FromArgb(24, 30, 42)
+                ctrl.ForeColor = Color.FromArgb(226, 232, 240)
+            elif is_dark and isinstance(ctrl, (Label, CheckBox)):
+                ctrl.ForeColor = Color.FromArgb(226, 232, 240) if ctrl.Font.Bold else Color.FromArgb(148, 163, 184)
+    except Exception:
+        pass
+
+
 def show_system_prompt_dialog(parent_form, profiles_data):
     """Модальное окно настройки Системного промпта (System Prompt)."""
     dlg = Form()
@@ -2122,6 +2182,7 @@ def show_system_prompt_dialog(parent_form, profiles_data):
     btn_save.Click += _on_save
     dlg.Controls.Add(btn_save)
 
+    style_subdialog_controls(dlg, is_dark=bool(profiles_data.get("ui_dark_mode", False)))
     dlg.ShowDialog(parent_form)
     return saved_flag["ok"]
 
@@ -2357,6 +2418,16 @@ def show_prompt_templates_dialog(parent_form, profiles_data, target_textbox, is_
     lst_tpl.DoubleClick += _on_replace
 
     _refresh_list(0)
+    is_dark_dlg = bool(profiles_data.get("ui_dark_mode", False))
+    style_subdialog_controls(dlg, is_dark=is_dark_dlg)
+    try:
+        txt_body.Font = Font("Segoe UI", 9.0, FontStyle.Bold if PROMPT_TEXT_BOLD else FontStyle.Regular)
+        if is_negative:
+            txt_body.ForeColor = NEG_PROMPT_COLOR_DARK if is_dark_dlg else NEG_PROMPT_COLOR_LIGHT
+        else:
+            txt_body.ForeColor = PROMPT_COLOR_DARK if is_dark_dlg else PROMPT_COLOR_LIGHT
+    except Exception:
+        pass
     dlg.ShowDialog(parent_form)
 
 
@@ -2411,6 +2482,7 @@ def show_full_image_window(image_path, title_text, live_bitmap=None):
     btn_close.Font = Font("Segoe UI", 9.0, FontStyle.Bold)
     btn_close.Size = Size(150, 34)
     btn_close.Cursor = Cursors.Hand
+    apply_button_hover(btn_close, btn_close.BackColor, btn_close.BackColor)
     btn_close.Click += lambda s, a: viewer.Close()
     pnl_bottom.Controls.Add(btn_close)
 
@@ -2940,6 +3012,10 @@ def show_comparison_window(input_items, res_path, view_label, prompt_text, model
                     pass
                 state[k] = None
 
+    for _pnl_c in (pnl_top, pnl_bottom):
+        for _b_c in _pnl_c.Controls:
+            if isinstance(_b_c, Button):
+                apply_button_hover(_b_c, _b_c.BackColor, _b_c.FlatAppearance.BorderColor)
     form.Resize += _layout_cmp
     form.FormClosed += _on_cmp_closed
     _layout_cmp()
@@ -2948,7 +3024,7 @@ def show_comparison_window(input_items, res_path, view_label, prompt_text, model
 
 # USER INTERFACE
 # ==============================================================================
-# 8. ГЛАВНОЕ ОКНО СТУДИИ (v3.2 — СТАБИЛЬНЫЙ РЕНДЕР БЕЗ АВТО-ПОВТОРОВ, АКТУАЛЬНЫЕ МОДЕЛИ)
+# 8. ГЛАВНОЕ ОКНО СТУДИИ (v3.8 — НАСТРОЙКИ ПРОМПТОВ, ТЕМ И ПОДСКАЗОК КАК В REVIT)
 # ==============================================================================
 
 NONE_VIEW_LABEL = u"Выберите вид модели или укажите внешний путь"
@@ -2957,6 +3033,17 @@ NONE_VIEW_LABEL = u"Выберите вид модели или укажите �
 REVIT_TOOLTIP_INITIAL_DELAY_MS = 700    # Время удержания курсора при наведении до появления подсказки (~0.7 сек)
 REVIT_TOOLTIP_RESHOW_DELAY_MS = 500     # Задержка при переводе курсора на соседний элемент (~0.5 сек)
 REVIT_TOOLTIP_AUTOPOP_DELAY_MS = 20000  # Длительность показа открытой подсказки (20 сек)
+
+# --- БЫСТРАЯ НАСТРОЙКА ТЕКСТА ПРОМПТОВ (ЛЕГКО ПЕРЕКЛЮЧАТЬ В 1 СТРОКУ) ---
+# True  -> жирный шрифт (Bold) в полях Prompt и Negative Prompt
+# False -> обычный шрифт (Regular) в полях Prompt и Negative Prompt
+PROMPT_TEXT_BOLD = False
+
+# Цвета текста для ДНЕВНОЙ (Light) и НОЧНОЙ (Dark) темы (не светлые, с высокой читаемостью):
+PROMPT_COLOR_LIGHT = Color.FromArgb(4, 120, 87)        # Изумрудный для дневной темы (#047857)
+PROMPT_COLOR_DARK = Color.FromArgb(16, 185, 129)       # Изумрудный для ночной темы (#10B981)
+NEG_PROMPT_COLOR_LIGHT = Color.FromArgb(185, 28, 28)   # Рубиново-красный для дневной темы (#B91C1C)
+NEG_PROMPT_COLOR_DARK = Color.FromArgb(229, 72, 77)    # Карминно-красный для ночной темы (#E5484D)
 
 
 class ChutesRevitStudioForm(Form):
@@ -3021,7 +3108,7 @@ class ChutesRevitStudioForm(Form):
 
         self.source_image_path = u""
         self.result_image_path = u""
-        self.status_message = u"Окно студии v3.7 открыто."
+        self.status_message = u"Окно студии v3.8 открыто."
         self.meta_result = {}
         self.execution_succeeded = False
 
@@ -3037,23 +3124,13 @@ class ChutesRevitStudioForm(Form):
             except Exception:
                 pass
 
-        self.col_bg = Color.FromArgb(246, 248, 250)
-        self.col_card = Color.FromArgb(255, 255, 255)
-        self.col_dark = Color.FromArgb(15, 23, 42)
-        self.col_accent = Color.FromArgb(37, 99, 235)
-        self.col_accent_soft = Color.FromArgb(239, 246, 255)
-        self.col_emerald = Color.FromArgb(16, 185, 129)
-        self.col_emerald_dark = Color.FromArgb(5, 150, 105)
-        self.col_text = Color.FromArgb(30, 41, 59)
-        self.col_muted = Color.FromArgb(100, 116, 139)
-        self.col_border = Color.FromArgb(226, 232, 240)
-        self.col_success = Color.FromArgb(22, 163, 74)
-        self.col_slot_active = Color.FromArgb(241, 245, 249)
-        self.col_slot_inactive = Color.FromArgb(226, 232, 240)
+        self.is_dark_mode = bool(self.profiles_data.get("ui_dark_mode", False))
+        self._set_palette_colors(self.is_dark_mode)
 
         self.font_title = Font("Segoe UI", 12.0, FontStyle.Bold)
         self.font_sec = Font("Segoe UI", 9.5, FontStyle.Bold)
         self.font_reg = Font("Segoe UI", 9.0, FontStyle.Regular)
+        self.font_prompt = Font("Segoe UI", 9.0, FontStyle.Bold if PROMPT_TEXT_BOLD else FontStyle.Regular)
         self.font_small = Font("Segoe UI", 8.25, FontStyle.Regular)
         self.font_small_bold = Font("Segoe UI", 8.25, FontStyle.Bold)
         self.font_mono = Font("Consolas", 8.5, FontStyle.Regular)
@@ -3100,6 +3177,68 @@ class ChutesRevitStudioForm(Form):
         self._is_initializing = False
         self.progress_bar.Value = 0
 
+    def _set_palette_colors(self, is_dark):
+        self.is_dark_mode = bool(is_dark)
+        self.col_dark = Color.FromArgb(15, 23, 42)
+        self.col_emerald = Color.FromArgb(16, 185, 129)
+        self.col_emerald_dark = Color.FromArgb(5, 150, 105)
+        self.col_success = Color.FromArgb(34, 197, 94) if is_dark else Color.FromArgb(22, 163, 74)
+        self.col_prompt_fg = PROMPT_COLOR_DARK if is_dark else PROMPT_COLOR_LIGHT
+        self.col_neg_prompt_fg = NEG_PROMPT_COLOR_DARK if is_dark else NEG_PROMPT_COLOR_LIGHT
+        if is_dark:
+            self.col_bg = Color.FromArgb(22, 27, 36)
+            self.col_card = Color.FromArgb(32, 39, 52)
+            self.col_input_bg = Color.FromArgb(24, 30, 42)
+            self.col_log_bg = Color.FromArgb(18, 23, 33)
+            self.col_sec_hdr = Color.FromArgb(241, 245, 249)
+            self.col_text = Color.FromArgb(226, 232, 240)
+            self.col_muted = Color.FromArgb(148, 163, 184)
+            self.col_border = Color.FromArgb(56, 68, 89)
+            self.col_accent = Color.FromArgb(96, 165, 250)
+            self.col_accent_soft = Color.FromArgb(30, 58, 95)
+            self.col_btn_dark = Color.FromArgb(51, 65, 85)
+            self.col_slot_active = Color.FromArgb(25, 32, 44)
+            self.col_slot_inactive = Color.FromArgb(19, 24, 34)
+        else:
+            self.col_bg = Color.FromArgb(246, 248, 250)
+            self.col_card = Color.FromArgb(255, 255, 255)
+            self.col_input_bg = Color.FromArgb(255, 255, 255)
+            self.col_log_bg = Color.FromArgb(248, 250, 252)
+            self.col_sec_hdr = Color.FromArgb(15, 23, 42)
+            self.col_text = Color.FromArgb(30, 41, 59)
+            self.col_muted = Color.FromArgb(100, 116, 139)
+            self.col_border = Color.FromArgb(226, 232, 240)
+            self.col_accent = Color.FromArgb(37, 99, 235)
+            self.col_accent_soft = Color.FromArgb(239, 246, 255)
+            self.col_btn_dark = Color.FromArgb(15, 23, 42)
+            self.col_slot_active = Color.FromArgb(241, 245, 249)
+            self.col_slot_inactive = Color.FromArgb(226, 232, 240)
+
+    def _style_button_by_role(self, btn):
+        if btn is None:
+            return
+        role = u_str(getattr(btn, "Tag", u"surface"))
+        if role == u"accent_soft":
+            bg, fg = self.col_accent_soft, self.col_accent
+            brd = self.col_border if self.is_dark_mode else self.col_accent_soft
+        elif role == u"emerald":
+            bg, fg, brd = self.col_emerald, Color.White, self.col_emerald_dark
+        elif role == u"primary_dark":
+            bg, fg = self.col_btn_dark, Color.White
+            brd = self.col_border if self.is_dark_mode else self.col_btn_dark
+        elif role == u"surface_accent":
+            bg, fg, brd = self.col_card, self.col_accent, self.col_border
+        elif role == u"surface_muted":
+            bg, fg, brd = self.col_card, self.col_muted, self.col_border
+        elif role == u"header_theme":
+            bg = Color.FromArgb(51, 65, 85) if self.is_dark_mode else Color.FromArgb(30, 41, 59)
+            fg = Color.FromArgb(226, 232, 240)
+            brd = Color.FromArgb(71, 85, 105)
+        else:
+            bg, fg, brd = self.col_card, self.col_text, self.col_border
+        btn.ForeColor = fg
+        apply_button_hover(btn, bg, brd)
+
     def _create_card(self, x, y, w, h):
         pnl = Panel()
         pnl.Location = Point(x, y)
@@ -3109,18 +3248,30 @@ class ChutesRevitStudioForm(Form):
         self.Controls.Add(pnl)
         return pnl
 
-    def _create_button(self, parent, text, x, y, w, h, bg_color, fg_color, bold=False):
+    def _create_button(self, parent, text, x, y, w, h, bg_color, fg_color, bold=False, role=None):
         btn = Button()
         btn.Text = text
         btn.Location = Point(x, y)
         btn.Size = Size(w, h)
         btn.FlatStyle = FlatStyle.Flat
         btn.FlatAppearance.BorderSize = 1
-        btn.FlatAppearance.BorderColor = self.col_border if bg_color == self.col_card else bg_color
-        btn.BackColor = bg_color
-        btn.ForeColor = fg_color
         btn.Font = self.font_sec if bold else self.font_reg
         btn.Cursor = Cursors.Hand
+        if role is None:
+            if bg_color == self.col_accent_soft:
+                role = u"accent_soft"
+            elif bg_color == self.col_emerald:
+                role = u"emerald"
+            elif bg_color == self.col_dark or bg_color == self.col_btn_dark:
+                role = u"primary_dark"
+            elif bg_color == self.col_card and fg_color == self.col_accent:
+                role = u"surface_accent"
+            elif bg_color == self.col_card and fg_color == self.col_muted:
+                role = u"surface_muted"
+            else:
+                role = u"surface"
+        btn.Tag = role
+        self._style_button_by_role(btn)
         parent.Controls.Add(btn)
         return btn
 
@@ -3278,13 +3429,31 @@ class ChutesRevitStudioForm(Form):
 
         self.KeyPreview = True
         self.lbl_app_sub = Label()
-        self.lbl_app_sub.Text = u"v 3.7"
+        self.lbl_app_sub.Text = u"v 3.8"
         self.lbl_app_sub.Location = Point(540, 14)
-        self.lbl_app_sub.Size = Size(700, 20)
+        self.lbl_app_sub.Size = Size(580, 20)
         self.lbl_app_sub.Font = self.font_reg
         self.lbl_app_sub.ForeColor = Color.FromArgb(148, 163, 184)
         self.lbl_app_sub.TextAlign = ContentAlignment.MiddleRight
         self.pnl_header.Controls.Add(self.lbl_app_sub)
+
+        self.btn_theme_toggle = self._create_button(
+            self.pnl_header,
+            u"Theme: Dark" if self.is_dark_mode else u"Theme: Light",
+            1136,
+            11,
+            110,
+            26,
+            self.col_dark,
+            Color.White,
+            role=u"header_theme",
+        )
+        self.btn_theme_toggle.Font = self.font_small_bold
+        self.btn_theme_toggle.Click += self._on_toggle_theme
+        self.tooltip.SetToolTip(
+            self.btn_theme_toggle,
+            u"Переключить цветовую тему окна: Светлая (Light) / Тёмная (Dark).\nРаботает одинаково в Revit 2020 и Revit 2022+ и автоматически сохраняется в профиле.",
+        )
 
         # ======================================================================
         # КАРТОЧКА 1 (СЛЕВА ВВЕРХУ): ПРОФИЛЬ, BASE URL И API KEY
@@ -3700,7 +3869,8 @@ class ChutesRevitStudioForm(Form):
         self.txt_prompt.Size = Size(268, 96)
         self.txt_prompt.Multiline = True
         self.txt_prompt.ScrollBars = ScrollBars.Vertical
-        self.txt_prompt.Font = self.font_reg
+        self.txt_prompt.Font = self.font_prompt
+        self.txt_prompt.ForeColor = self.col_prompt_fg
         self.txt_prompt.Text = u_str(
             init_prompt
             or u"Convert this 3D CAD view into a photorealistic architectural render, preserve exact building contours and geometry, glass and concrete facade, sunny day"
@@ -3712,7 +3882,8 @@ class ChutesRevitStudioForm(Form):
         self.txt_neg_prompt.Size = Size(268, 96)
         self.txt_neg_prompt.Multiline = True
         self.txt_neg_prompt.ScrollBars = ScrollBars.Vertical
-        self.txt_neg_prompt.Font = self.font_reg
+        self.txt_neg_prompt.Font = self.font_prompt
+        self.txt_neg_prompt.ForeColor = self.col_neg_prompt_fg
         self.txt_neg_prompt.Text = u""
         self.tooltip.SetToolTip(
             self.txt_neg_prompt,
@@ -3948,7 +4119,7 @@ class ChutesRevitStudioForm(Form):
             u"Vault (Папка сохранения рендеров):\nНажмите на «Vault:», чтобы открыть текущую папку с рендерами в Проводнике Windows.",
         )
         self.lbl_dir.MouseEnter += lambda s, a: setattr(
-            self.lbl_dir, "ForeColor", Color.FromArgb(29, 78, 216)
+            self.lbl_dir, "ForeColor", Color.FromArgb(147, 197, 253) if self.is_dark_mode else Color.FromArgb(29, 78, 216)
         )
         self.lbl_dir.MouseLeave += lambda s, a: setattr(
             self.lbl_dir, "ForeColor", self.col_accent
@@ -4129,7 +4300,7 @@ class ChutesRevitStudioForm(Form):
         self.lbl_github_link.Cursor = Cursors.Hand
         self.tooltip.SetToolTip(self.lbl_github_link, u"Открыть https://github.com/alxiskra в браузере")
         self.lbl_github_link.MouseEnter += lambda s, a: setattr(
-            self.lbl_github_link, "ForeColor", Color.FromArgb(29, 78, 216)
+            self.lbl_github_link, "ForeColor", Color.FromArgb(147, 197, 253) if self.is_dark_mode else Color.FromArgb(29, 78, 216)
         )
         self.lbl_github_link.MouseLeave += lambda s, a: setattr(
             self.lbl_github_link, "ForeColor", self.col_accent
@@ -4197,6 +4368,7 @@ class ChutesRevitStudioForm(Form):
         self._update_sys_prompt_btn_appearance()
         self._init_all_slots(init_slot1_in, init_slot2_in, init_slot3_in)
         self._refresh_models_list(auto_startup=True)
+        self._apply_theme()
         self._apply_responsive_layout()
 
     # --------------------------------------------------------------------------
@@ -4222,8 +4394,10 @@ class ChutesRevitStudioForm(Form):
         footer_h = 44
 
         self.pnl_header.Size = Size(cw, header_h)
-        self.lbl_app_sub.Location = Point(max(480, cw - 665), 14)
-        self.lbl_app_sub.Size = Size(645, 20)
+        self.btn_theme_toggle.Location = Point(cw - margin - 110, 11)
+        self.btn_theme_toggle.Size = Size(110, 26)
+        self.lbl_app_sub.Location = Point(max(420, self.btn_theme_toggle.Location.X - 310), 14)
+        self.lbl_app_sub.Size = Size(300, 20)
 
         total_w = cw - margin * 2
         left_w = max(510, int(total_w * 0.47))
@@ -4535,18 +4709,74 @@ class ChutesRevitStudioForm(Form):
     # --------------------------------------------------------------------------
     # ОБРАБОТЧИКИ ПОЛЗУНКОВ, СИДА, РАЗМЕРОВ, СИСТЕМНОГО ПРОМПТА И ШАБЛОНОВ
     # --------------------------------------------------------------------------
+    def _on_toggle_theme(self, sender, args):
+        self.is_dark_mode = not bool(self.is_dark_mode)
+        self.profiles_data["ui_dark_mode"] = self.is_dark_mode
+        save_profiles_data(self.profiles_data)
+        self._apply_theme()
+
+    def _apply_theme(self):
+        self._set_palette_colors(self.is_dark_mode)
+        self.BackColor = self.col_bg
+        self.btn_theme_toggle.Text = u"Theme: Dark" if self.is_dark_mode else u"Theme: Light"
+        self._style_button_by_role(self.btn_theme_toggle)
+
+        cards = (self.card_conn, self.card_models, self.card_view, self.card_prev, self.card_prog)
+        sec_labels = (self.lbl_sec1, self.lbl_sec2, self.lbl_sec3, self.lbl_sec4, self.lbl_stage)
+        accent_labels = (self.lbl_models_status, self.lbl_dir, self.lbl_github_link, self.chk_retry_busy)
+        text_labels = (
+            self.lbl_custom_m, self.lbl_ep, self.chk_send_image,
+            self.lbl_pr, self.lbl_sz, self.lbl_width, self.lbl_cfg, self.lbl_st, self.lbl_seed,
+        )
+        for card in cards:
+            card.BackColor = self.col_card
+            for ctrl in card.Controls:
+                if isinstance(ctrl, Button):
+                    self._style_button_by_role(ctrl)
+                elif isinstance(ctrl, (TextBox, ComboBox, ListBox, NumericUpDown)):
+                    ctrl.BackColor = self.col_log_bg if ctrl is self.txt_log else self.col_input_bg
+                    if ctrl is self.txt_prompt:
+                        ctrl.ForeColor = self.col_prompt_fg
+                        ctrl.Font = self.font_prompt
+                    elif ctrl is self.txt_neg_prompt:
+                        ctrl.ForeColor = self.col_neg_prompt_fg
+                        ctrl.Font = self.font_prompt
+                    else:
+                        ctrl.ForeColor = self.col_text
+                elif isinstance(ctrl, TrackBar):
+                    ctrl.BackColor = self.col_card
+                elif isinstance(ctrl, (Label, CheckBox)):
+                    if ctrl is self.lbl_prev_right:
+                        ctrl.ForeColor = self.col_emerald if self.is_dark_mode else self.col_emerald_dark
+                    elif ctrl in sec_labels:
+                        ctrl.ForeColor = self.col_sec_hdr
+                    elif ctrl in accent_labels:
+                        ctrl.ForeColor = self.col_accent
+                    elif ctrl in text_labels:
+                        ctrl.ForeColor = self.col_text
+                    else:
+                        ctrl.ForeColor = self.col_muted
+
+        self.lbl_bottom_hint.ForeColor = self.col_muted
+        self.lbl_github_link.ForeColor = self.col_accent
+        self._style_button_by_role(self.btn_exit_bottom)
+        self.pic_result.BackColor = self.col_slot_active
+        self._update_sys_prompt_btn_appearance()
+        self._sync_width_btn_appearance()
+        for s_idx in range(3):
+            self._sync_slot_visual_state(s_idx)
+
     def _update_sys_prompt_btn_appearance(self):
         is_active = bool(self.profiles_data.get("use_system_prompt", False)) and bool(
             u_str(self.profiles_data.get("system_prompt", u"")).strip()
         )
         if is_active:
             self.btn_sys_prompt.Text = u"Sys.Prompt [ON]"
-            self.btn_sys_prompt.BackColor = self.col_accent_soft
-            self.btn_sys_prompt.ForeColor = self.col_accent
+            self.btn_sys_prompt.Tag = u"accent_soft"
         else:
             self.btn_sys_prompt.Text = u"Sys.Prompt"
-            self.btn_sys_prompt.BackColor = self.col_card
-            self.btn_sys_prompt.ForeColor = self.col_text
+            self.btn_sys_prompt.Tag = u"surface"
+        self._style_button_by_role(self.btn_sys_prompt)
 
     def _on_sys_prompt_click(self, sender, args):
         changed = show_system_prompt_dialog(self, self.profiles_data)
@@ -4639,19 +4869,23 @@ class ChutesRevitStudioForm(Form):
         self._syncing_params = False
         self.log_step(u"Установлен случайный Seed: {}".format(rnd), progress_val=0)
 
-    def _on_toggle_manual_width(self, sender, args):
-        self.manual_width_enabled = not self.manual_width_enabled
+    def _sync_width_btn_appearance(self):
         if self.manual_width_enabled:
             self.num_width.Enabled = True
             self.btn_toggle_width.Text = u"Manual W×H"
-            self.btn_toggle_width.BackColor = self.col_emerald
-            self.btn_toggle_width.ForeColor = Color.White
-            self.log_step(u"Включён режим ручного задания Width и Height (в пикселях).", progress_val=0)
+            self.btn_toggle_width.Tag = u"emerald"
         else:
             self.num_width.Enabled = False
             self.btn_toggle_width.Text = u"Auto Width"
-            self.btn_toggle_width.BackColor = self.col_accent_soft
-            self.btn_toggle_width.ForeColor = self.col_accent
+            self.btn_toggle_width.Tag = u"accent_soft"
+        self._style_button_by_role(self.btn_toggle_width)
+
+    def _on_toggle_manual_width(self, sender, args):
+        self.manual_width_enabled = not self.manual_width_enabled
+        self._sync_width_btn_appearance()
+        if self.manual_width_enabled:
+            self.log_step(u"Включён режим ручного задания Width и Height (в пикселях).", progress_val=0)
+        else:
             self._recalc_auto_width_preview()
             self.log_step(u"Включён режим Auto Width (автоматический подбор ширины по пропорциям кадра).", progress_val=0)
 
@@ -4693,7 +4927,7 @@ class ChutesRevitStudioForm(Form):
         if status_color is not None:
             self.lbl_stage.ForeColor = status_color
         else:
-            self.lbl_stage.ForeColor = self.col_dark
+            self.lbl_stage.ForeColor = self.col_sec_hdr
         if progress_val is not None:
             self.progress_bar.Value = max(0, min(100, int(progress_val)))
         prev_text = u_str(self.txt_log.Text)
