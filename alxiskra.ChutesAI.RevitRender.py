@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Dynamo Python Node (Revit 2020 / 2022 / 2023+) — Минималистичная студия AI-рендера 3D-видов (v3.4)
+Dynamo Python Node (Revit 2020 / 2022 / 2023+) — Минималистичная студия AI-рендера 3D-видов (v3.7)
 через Chutes.ai (Qwen-Image-Edit-2511, Qwen-Image-2512, z-image-turbo, imageclassic)
 и совместимые API.
 
@@ -538,6 +538,55 @@ def reset_service_point(url):
         pass
 
 
+def open_url_in_browser(url):
+    """Безопасное открытие ссылки в браузере по умолчанию (IronPython 2.7 и CPython 3)."""
+    clean_url = u_str(url).strip()
+    if not clean_url:
+        return False
+    try:
+        psi = ProcessStartInfo(clean_url)
+        psi.UseShellExecute = True
+        Process.Start(psi)
+        return True
+    except Exception:
+        try:
+            Process.Start(clean_url)
+            return True
+        except Exception:
+            try:
+                psi2 = ProcessStartInfo("cmd.exe", u'/c start "" "{}"'.format(clean_url))
+                psi2.UseShellExecute = False
+                psi2.CreateNoWindow = True
+                Process.Start(psi2)
+                return True
+            except Exception:
+                return False
+
+
+def open_folder_in_explorer(folder_path):
+    """Открывает указанную папку в Проводнике Windows (создаёт папку, если она ещё не существует)."""
+    clean_dir = u_str(folder_path).strip()
+    if not clean_dir:
+        desktop = Environment.GetFolderPath(Environment.SpecialFolder.Desktop)
+        clean_dir = Path.Combine(desktop, u"Chutes_Renders")
+    try:
+        if not Directory.Exists(clean_dir):
+            Directory.CreateDirectory(clean_dir)
+    except Exception:
+        pass
+    try:
+        psi = ProcessStartInfo("explorer.exe", u'"{}"'.format(clean_dir))
+        psi.UseShellExecute = True
+        Process.Start(psi)
+        return True
+    except Exception:
+        try:
+            Process.Start("explorer.exe", clean_dir)
+            return True
+        except Exception:
+            return open_url_in_browser(clean_dir)
+
+
 def get_input(index, default_val=None):
     """Безопасное чтение входных портов Dynamo."""
     try:
@@ -792,22 +841,6 @@ DEFAULT_POS_TEMPLATES = [
     {
         "name": u"Зимнее окружение",
         "text": u"Photorealistic winter architectural render, fresh snow on ground and trees, crisp cold morning light, warm cozy interior lighting, preserve exact building geometry",
-    },
-    {
-        "name": u"Кадр 1 — геометрия из Revit, Кадр 2 — референс материалов/погоды/стиля",
-        "text": u"Use image 1 as the strict base 3D building geometry, camera angle, and perspective. Apply the facade materials, lighting, and winter atmosphere from image 2 to the building in image 1.",
-    },
-    {
-        "name": u"Кадр 1 — тонированный вид из Revit, Кадр 2 — контурный вид тих же стен, Кадр 3 — фото-референс стиля",
-        "text": u"Transform the 3D CAD view in image 1 into a photorealistic architectural render, strictly preserving the exact structural lines from image 2 and matching the architectural style, materials, and lighting of image 3.",
-    },
-    {
-        "name": u"Замена или вставка объекта из одного кадра в другой",
-        "text": u"Keep the exact room interior geometry from image 1, and place the furniture style and materials from image 2 into the room.",
-    },
-    {
-        "name": u"Пустой шаблон",
-        "text": u"Текст текстовый текст",
     },
 ]
 
@@ -2920,6 +2953,11 @@ def show_comparison_window(input_items, res_path, view_label, prompt_text, model
 
 NONE_VIEW_LABEL = u"Выберите вид модели или укажите внешний путь"
 
+# Задержки всплывающих подсказок как в интерфейсе Autodesk Revit (в миллисекундах)
+REVIT_TOOLTIP_INITIAL_DELAY_MS = 700    # Время удержания курсора при наведении до появления подсказки (~0.7 сек)
+REVIT_TOOLTIP_RESHOW_DELAY_MS = 500     # Задержка при переводе курсора на соседний элемент (~0.5 сек)
+REVIT_TOOLTIP_AUTOPOP_DELAY_MS = 20000  # Длительность показа открытой подсказки (20 сек)
+
 
 class ChutesRevitStudioForm(Form):
     def __init__(
@@ -2983,7 +3021,7 @@ class ChutesRevitStudioForm(Form):
 
         self.source_image_path = u""
         self.result_image_path = u""
-        self.status_message = u"Окно студии v3.2 открыто."
+        self.status_message = u"Окно студии v3.7 открыто."
         self.meta_result = {}
         self.execution_succeeded = False
 
@@ -3021,6 +3059,25 @@ class ChutesRevitStudioForm(Form):
         self.font_mono = Font("Consolas", 8.5, FontStyle.Regular)
 
         self.tooltip = ToolTip()
+        self.param_tooltip = ToolTip()
+        self._active_help_ctrl = None
+        self._pending_help_ctrl = None
+        self._pending_help_text = u""
+        self._param_hover_timer = Timer()
+        self._param_hover_timer.Interval = REVIT_TOOLTIP_INITIAL_DELAY_MS
+        self._param_hover_timer.Tick += self._on_param_hover_timer_tick
+        try:
+            self.tooltip.AutoPopDelay = REVIT_TOOLTIP_AUTOPOP_DELAY_MS
+            self.tooltip.InitialDelay = REVIT_TOOLTIP_INITIAL_DELAY_MS
+            self.tooltip.ReshowDelay = REVIT_TOOLTIP_RESHOW_DELAY_MS
+            self.tooltip.ShowAlways = True
+
+            self.param_tooltip.AutoPopDelay = REVIT_TOOLTIP_AUTOPOP_DELAY_MS
+            self.param_tooltip.InitialDelay = REVIT_TOOLTIP_INITIAL_DELAY_MS
+            self.param_tooltip.ReshowDelay = REVIT_TOOLTIP_RESHOW_DELAY_MS
+            self.param_tooltip.ShowAlways = True
+        except Exception:
+            pass
 
         self.slot_combos = []
         self.slot_file_btns = []
@@ -3067,6 +3124,122 @@ class ChutesRevitStudioForm(Form):
         parent.Controls.Add(btn)
         return btn
 
+    def _on_param_hover_timer_tick(self, sender, args):
+        """Показывает подсказку параметра после удержания курсора (как в GUI Revit)."""
+        try:
+            self._param_hover_timer.Stop()
+        except Exception:
+            pass
+        target_ctrl = getattr(self, "_pending_help_ctrl", None)
+        target_text = getattr(self, "_pending_help_text", u"")
+        if target_ctrl is not None and target_text:
+            self._show_param_help_for(target_ctrl, target_text)
+
+    def _hide_active_param_help(self, sender=None, args=None):
+        """Мгновенно останавливает таймер ожидания и скрывает открытую подсказку параметра."""
+        try:
+            if hasattr(self, "_param_hover_timer") and self._param_hover_timer is not None:
+                self._param_hover_timer.Stop()
+        except Exception:
+            pass
+        pend_ctrl = getattr(self, "_pending_help_ctrl", None)
+        self._pending_help_ctrl = None
+        self._pending_help_text = u""
+        if pend_ctrl is not None:
+            try:
+                pend_ctrl.ForeColor = self.col_text
+            except Exception:
+                pass
+        prev_ctrl = getattr(self, "_active_help_ctrl", None)
+        self._active_help_ctrl = None
+        if prev_ctrl is not None:
+            try:
+                self.param_tooltip.Hide(prev_ctrl)
+            except Exception:
+                pass
+            try:
+                prev_ctrl.ForeColor = self.col_text
+            except Exception:
+                pass
+
+    def _show_param_help_for(self, lbl_ctrl, help_text):
+        """Скрывает предыдущую подсказку и показывает новую в стороне от колонки подписей."""
+        if lbl_ctrl is None:
+            return
+        prev_ctrl = getattr(self, "_active_help_ctrl", None)
+        if prev_ctrl is not None:
+            try:
+                self.param_tooltip.Hide(prev_ctrl)
+            except Exception:
+                pass
+            if prev_ctrl is not lbl_ctrl:
+                try:
+                    prev_ctrl.ForeColor = self.col_text
+                except Exception:
+                    pass
+        self._active_help_ctrl = lbl_ctrl
+        try:
+            lbl_ctrl.ForeColor = self.col_accent
+        except Exception:
+            pass
+        try:
+            # Показываем правее подписи и выше ряда ползунков, чтобы не перекрывать соседние слова Steps / Seed
+            self.param_tooltip.Show(
+                help_text,
+                lbl_ctrl,
+                int(lbl_ctrl.Width) + 6,
+                -96,
+                REVIT_TOOLTIP_AUTOPOP_DELAY_MS,
+            )
+        except Exception:
+            pass
+
+    def _bind_param_help(self, lbl_ctrl, related_ctrls, help_text):
+        """Делает подпись параметра интерактивной: при наведении ждёт задержку как в Revit GUI (700 мс), при клике открывает сразу, при уводе скрывает."""
+        if lbl_ctrl is None:
+            return
+        try:
+            lbl_ctrl.Cursor = Cursors.Hand
+        except Exception:
+            pass
+        for rc in (related_ctrls or []):
+            if rc is not None:
+                try:
+                    self.tooltip.SetToolTip(rc, help_text)
+                    rc.MouseDown += self._hide_active_param_help
+                except Exception:
+                    pass
+
+        def _on_enter(s, a):
+            prev_ctrl = getattr(self, "_active_help_ctrl", None)
+            if prev_ctrl is not None and prev_ctrl is not lbl_ctrl:
+                self._hide_active_param_help()
+            self._pending_help_ctrl = lbl_ctrl
+            self._pending_help_text = help_text
+            try:
+                lbl_ctrl.ForeColor = self.col_accent
+            except Exception:
+                pass
+            try:
+                self._param_hover_timer.Stop()
+                self._param_hover_timer.Start()
+            except Exception:
+                self._show_param_help_for(lbl_ctrl, help_text)
+
+        def _on_leave(s, a):
+            self._hide_active_param_help()
+
+        def _on_click(s, a):
+            try:
+                self._param_hover_timer.Stop()
+            except Exception:
+                pass
+            self._show_param_help_for(lbl_ctrl, help_text)
+
+        lbl_ctrl.MouseEnter += _on_enter
+        lbl_ctrl.MouseLeave += _on_leave
+        lbl_ctrl.Click += _on_click
+
     def _build_ui(
         self,
         init_api_key,
@@ -3080,8 +3253,8 @@ class ChutesRevitStudioForm(Form):
         init_slot3_in,
     ):
         self.Text = u"AI Render Studio"
-        self.Size = Size(1280, 950)
-        self.MinimumSize = Size(1080, 865)
+        self.Size = Size(1280, 965)
+        self.MinimumSize = Size(1080, 885)
         self.FormBorderStyle = FormBorderStyle.Sizable
         self.StartPosition = FormStartPosition.CenterScreen
         self.MaximizeBox = True
@@ -3105,7 +3278,7 @@ class ChutesRevitStudioForm(Form):
 
         self.KeyPreview = True
         self.lbl_app_sub = Label()
-        self.lbl_app_sub.Text = u"v 3.4"
+        self.lbl_app_sub.Text = u"v 3.7"
         self.lbl_app_sub.Location = Point(540, 14)
         self.lbl_app_sub.Size = Size(700, 20)
         self.lbl_app_sub.Font = self.font_reg
@@ -3143,14 +3316,22 @@ class ChutesRevitStudioForm(Form):
         self.card_conn.Controls.Add(self.cmb_profile)
 
         self.btn_save_prof = self._create_button(
-            self.card_conn, u"Сохранить", 362, 34, 96, 26, self.col_accent_soft, self.col_accent
+            self.card_conn, u"Save", 362, 34, 96, 26, self.col_accent_soft, self.col_accent
         )
         self.btn_save_prof.Click += self._on_save_profile
+        self.tooltip.SetToolTip(
+            self.btn_save_prof,
+            u"Сохранить текущий профиль (Base URL, API Key и список добавленных моделей) в файл настроек.",
+        )
 
         self.btn_del_prof = self._create_button(
-            self.card_conn, u"Удалить", 464, 34, 80, 26, self.col_card, self.col_muted
+            self.card_conn, u"Delete", 464, 34, 80, 26, self.col_card, self.col_muted
         )
         self.btn_del_prof.Click += self._on_delete_profile
+        self.tooltip.SetToolTip(
+            self.btn_del_prof,
+            u"Удалить выбранный профиль из списка сохранённых профилей.",
+        )
 
         lbl_url = Label()
         lbl_url.Text = u"Base URL:"
@@ -3240,41 +3421,56 @@ class ChutesRevitStudioForm(Form):
         self.card_models.Controls.Add(self.lst_models)
 
         self.lbl_custom_m = Label()
-        self.lbl_custom_m.Text = u"Своя модель:"
+        self.lbl_custom_m.Text = u"Add Model:"
         self.lbl_custom_m.Location = Point(14, 118)
         self.lbl_custom_m.Size = Size(82, 20)
-        self.lbl_custom_m.Font = self.font_small
-        self.lbl_custom_m.ForeColor = self.col_muted
+        self.lbl_custom_m.Font = self.font_small_bold
+        self.lbl_custom_m.ForeColor = self.col_text
         self.card_models.Controls.Add(self.lbl_custom_m)
 
         self.txt_custom_model = TextBox()
         self.txt_custom_model.Location = Point(98, 115)
         self.txt_custom_model.Size = Size(320, 22)
         self.txt_custom_model.Font = self.font_small
-        self.tooltip.SetToolTip(
-            self.txt_custom_model,
-            u"Введите имя/ID любой модели (Chutes или другого провайдера) и нажмите «+ В профиль»",
-        )
         self.card_models.Controls.Add(self.txt_custom_model)
+
+        self._bind_param_help(
+            self.lbl_custom_m,
+            [self.txt_custom_model],
+            (
+                u"Add Model (Добавление своей модели в профиль):\n"
+                u"• Позволяет вручную добавить любую модель с Chutes.ai или стороннего API.\n"
+                u"• Введите название/slug модели (например, flux-1-dev) и нажмите «+ В профиль».\n"
+                u"• Модель сохранится в вашем профиле и появится в списке со звёздочкой ★."
+            ),
+        )
 
         self.btn_add_model = self._create_button(
             self.card_models, u"+ В профиль", 424, 114, 102, 24, self.col_accent_soft, self.col_accent
         )
         self.btn_add_model.Font = self.font_small_bold
         self.btn_add_model.Click += self._on_add_custom_model_click
+        self.tooltip.SetToolTip(
+            self.btn_add_model,
+            u"Сохранить указанную в поле «Add Model» модель в активный профиль.",
+        )
 
         self.btn_del_model = self._create_button(
             self.card_models, u"Убрать", 532, 114, 88, 24, self.col_card, self.col_muted
         )
         self.btn_del_model.Font = self.font_small
         self.btn_del_model.Click += self._on_remove_custom_model_click
+        self.tooltip.SetToolTip(
+            self.btn_del_model,
+            u"Удалить выбранную пользовательскую модель (★) из активного профиля.",
+        )
 
         self.lbl_ep = Label()
-        self.lbl_ep.Text = u"Эндпоинт:"
+        self.lbl_ep.Text = u"Endpoint:"
         self.lbl_ep.Location = Point(14, 146)
-        self.lbl_ep.Size = Size(72, 20)
-        self.lbl_ep.Font = self.font_small
-        self.lbl_ep.ForeColor = self.col_muted
+        self.lbl_ep.Size = Size(82, 20)
+        self.lbl_ep.Font = self.font_small_bold
+        self.lbl_ep.ForeColor = self.col_text
         self.card_models.Controls.Add(self.lbl_ep)
 
         self.txt_endpoint = TextBox()
@@ -3284,6 +3480,17 @@ class ChutesRevitStudioForm(Form):
         self.txt_endpoint.Text = BUILTIN_CHUTES_IMAGE_MODELS[0]["endpoint"]
         self.card_models.Controls.Add(self.txt_endpoint)
 
+        self._bind_param_help(
+            self.lbl_ep,
+            [self.txt_endpoint],
+            (
+                u"Endpoint (Прямой URL-адрес API выбранной модели):\n"
+                u"• Полный сетевой адрес (URL), на который студия отправляет запрос генерации.\n"
+                u"• Подставляется автоматически при выборе модели в списке выше.\n"
+                u"• При подключении нестандартного сервера или своего chute можно изменить вручную."
+            ),
+        )
+
         self.chk_send_image = CheckBox()
         self.chk_send_image.Text = u"Отправлять входные кадры (1..3) в image_b64s"
         self.chk_send_image.Location = Point(14, 171)
@@ -3291,6 +3498,18 @@ class ChutesRevitStudioForm(Form):
         self.chk_send_image.Font = self.font_small
         self.chk_send_image.ForeColor = self.col_text
         self.chk_send_image.Checked = True
+        self.tooltip.SetToolTip(
+            self.chk_send_image,
+            (
+                u"Отправлять входные кадры (1..3) в image_b64s (Режим редактирования / Img2Img):\n"
+                u"• ВКЛЮЧЕНО: студия экспортирует отмеченные галочками кадры (Кадр 1..3) из Revit/файлов\n"
+                u"  и отправляет их в нейросеть как исходную геометрию и референс.\n"
+                u"  Обязательно включайте для модели Qwen-Image-Edit-2511!\n"
+                u"• ВЫКЛЮЧЕНО: кадры из Revit не отправляются, нейросеть генерирует изображение с нуля\n"
+                u"  только по текстовому описанию Prompt (режим Text-to-Image для Qwen-Image-2512, z-image-turbo, imageclassic).\n"
+                u"• Переключается автоматически при выборе модели в списке выше."
+            ),
+        )
         self.card_models.Controls.Add(self.chk_send_image)
 
         self.chk_retry_busy = CheckBox()
@@ -3345,12 +3564,16 @@ class ChutesRevitStudioForm(Form):
         self.btn_clear_search.Click += self._on_clear_view_search
 
         self.chk_all_views = CheckBox()
-        self.chk_all_views.Text = u"2D-виды/планы"
+        self.chk_all_views.Text = u"2D View"
         self.chk_all_views.Location = Point(384, 34)
         self.chk_all_views.Size = Size(165, 20)
         self.chk_all_views.Font = self.font_small
         self.chk_all_views.ForeColor = self.col_muted
         self.chk_all_views.CheckedChanged += self._on_toggle_all_views
+        self.tooltip.SetToolTip(
+            self.chk_all_views,
+            u"Включить в выпадающие списки Кадров 1..3 также 2D-виды проекта Revit (планы этажей, фасады, разрезы, чертёжные виды).",
+        )
         self.card_view.Controls.Add(self.chk_all_views)
 
         self.slot_row_labels = []
@@ -3409,57 +3632,68 @@ class ChutesRevitStudioForm(Form):
             self.tooltip.SetToolTip(btn_clr, u"Очистить/отключить слот {}".format(s_idx + 1))
             self.slot_clear_btns.append(btn_clr)
 
-        # --- Промпт (слева) и Негативный промпт (справа) + Системный промпт + Шаблоны ---
+        # --- Prompt (слева) и Negative Prompt (справа) + Sys.Prompt + Шаблон ---
         self.lbl_pr = Label()
-        self.lbl_pr.Text = u"Промпт:"
+        self.lbl_pr.Text = u"Prompt:"
         self.lbl_pr.Location = Point(14, 150)
-        self.lbl_pr.Size = Size(62, 20)
+        self.lbl_pr.Size = Size(50, 20)
         self.lbl_pr.Font = self.font_small_bold
         self.lbl_pr.ForeColor = self.col_text
+        self.tooltip.SetToolTip(
+            self.lbl_pr,
+            u"Основной текстовый запрос (Prompt): опишите желаемый стиль, материалы фасада, окружение и освещение.",
+        )
         self.card_view.Controls.Add(self.lbl_pr)
 
         self.btn_sys_prompt = self._create_button(
-            self.card_view, u"* Системный", 78, 147, 102, 23, self.col_card, self.col_text
+            self.card_view, u"Sys.Prompt", 64, 147, 82, 23, self.col_card, self.col_text
         )
         self.btn_sys_prompt.Font = self.font_small
         self.btn_sys_prompt.Click += self._on_sys_prompt_click
-        self.tooltip.SetToolTip(self.btn_sys_prompt, u"Задать или включить Системный промпт (System Prompt)")
+        self.tooltip.SetToolTip(
+            self.btn_sys_prompt,
+            u"Системный промпт (System Prompt): задаёт общие инструкции сохранения 3D-геометрии и перспективы Revit. Нажмите для настройки.",
+        )
 
         self.btn_pos_tpl = self._create_button(
-            self.card_view, u"+ Шаблоны", 150, 147, 74, 23, self.col_accent_soft, self.col_accent
+            self.card_view, u"+ Шаблон", 149, 147, 68, 23, self.col_accent_soft, self.col_accent
         )
         self.btn_pos_tpl.Font = self.font_small
         self.btn_pos_tpl.Click += self._on_pos_templates_click
-        self.tooltip.SetToolTip(self.btn_pos_tpl, u"Открыть и сохранить шаблоны обычных промптов")
+        self.tooltip.SetToolTip(self.btn_pos_tpl, u"Открыть библиотеку готовых шаблонов для обычного промпта (Prompt).")
 
         self.btn_pos_paste = self._create_button(
-            self.card_view, u"Вставить", 226, 147, 62, 23, self.col_card, self.col_accent
+            self.card_view, u"Вставить", 220, 147, 62, 23, self.col_card, self.col_accent
         )
         self.btn_pos_paste.Font = self.font_small
         self.btn_pos_paste.Click += lambda s, a: paste_into_textbox(self.txt_prompt)
-        self.tooltip.SetToolTip(self.btn_pos_paste, u"Вставить текст из буфера обмена в поле Промпт (также работает Ctrl+V и ПКМ)")
+        self.tooltip.SetToolTip(self.btn_pos_paste, u"Вставить текст из буфера обмена в поле Prompt (также работает Ctrl+V и ПКМ)")
 
         self.lbl_neg_pr = Label()
-        self.lbl_neg_pr.Text = u"Негативный:"
+        self.lbl_neg_pr.Text = u"Negative Prompt:"
         self.lbl_neg_pr.Location = Point(292, 150)
-        self.lbl_neg_pr.Size = Size(88, 20)
+        self.lbl_neg_pr.Size = Size(120, 20)
         self.lbl_neg_pr.Font = self.font_small_bold
         self.lbl_neg_pr.ForeColor = self.col_muted
+        self.tooltip.SetToolTip(
+            self.lbl_neg_pr,
+            u"Негативный промпт (Negative Prompt): укажите, чего следует избегать на рендере (размытие, искажения геометрии, лишние детали).",
+        )
         self.card_view.Controls.Add(self.lbl_neg_pr)
 
         self.btn_neg_tpl = self._create_button(
-            self.card_view, u"+ Шаблоны", 412, 147, 74, 23, self.col_accent_soft, self.col_accent
+            self.card_view, u"+ Шаблон", 418, 147, 68, 23, self.col_accent_soft, self.col_accent
         )
         self.btn_neg_tpl.Font = self.font_small
         self.btn_neg_tpl.Click += self._on_neg_templates_click
-        self.tooltip.SetToolTip(self.btn_neg_tpl, u"Открыть и сохранить шаблоны негативных промптов")
+        self.tooltip.SetToolTip(self.btn_neg_tpl, u"Открыть библиотеку шаблонов для негативного промпта (Negative Prompt).")
 
         self.btn_neg_paste = self._create_button(
             self.card_view, u"Вставить", 488, 147, 62, 23, self.col_card, self.col_accent
         )
         self.btn_neg_paste.Font = self.font_small
         self.btn_neg_paste.Click += lambda s, a: paste_into_textbox(self.txt_neg_prompt)
-        self.tooltip.SetToolTip(self.btn_neg_paste, u"Вставить текст из буфера обмена в поле Негативный промпт (также работает Ctrl+V и ПКМ)")
+        self.tooltip.SetToolTip(self.btn_neg_paste, u"Вставить текст из буфера обмена в поле Negative Prompt (также работает Ctrl+V и ПКМ)")
 
         self.txt_prompt = TextBox()
         self.txt_prompt.Location = Point(14, 173)
@@ -3482,21 +3716,21 @@ class ChutesRevitStudioForm(Form):
         self.txt_neg_prompt.Text = u""
         self.tooltip.SetToolTip(
             self.txt_neg_prompt,
-            u"Необязательно: укажите, чего избегать на рендере (или выберите из «+ Шаблоны»)",
+            u"Необязательно: укажите, чего избегать на рендере (или выберите из «+ Шаблон»)",
         )
         self.card_view.Controls.Add(self.txt_neg_prompt)
 
-        # --- РЯД РАЗМЕРОВ: Height/Базовый размер + Кнопка Ручной/Авто Width + Width ---
+        # --- РЯД РАЗМЕРОВ: Height + Width + Кнопка Auto Width (размером как Random Seed) ---
         self.lbl_sz = Label()
-        self.lbl_sz.Text = u"Height (В):"
+        self.lbl_sz.Text = u"Height:"
         self.lbl_sz.Location = Point(14, 280)
-        self.lbl_sz.Size = Size(72, 22)
-        self.lbl_sz.Font = self.font_reg
-        self.lbl_sz.ForeColor = self.col_muted
+        self.lbl_sz.Size = Size(54, 22)
+        self.lbl_sz.Font = self.font_small_bold
+        self.lbl_sz.ForeColor = self.col_text
         self.card_view.Controls.Add(self.lbl_sz)
 
         self.num_size = NumericUpDown()
-        self.num_size.Location = Point(88, 278)
+        self.num_size.Location = Point(70, 278)
         self.num_size.Size = Size(76, 24)
         self.num_size.Minimum = to_decimal(512)
         self.num_size.Maximum = to_decimal(2048)
@@ -3506,26 +3740,16 @@ class ChutesRevitStudioForm(Form):
         self.num_size.ValueChanged += self._on_height_value_changed
         self.card_view.Controls.Add(self.num_size)
 
-        self.btn_toggle_width = self._create_button(
-            self.card_view, u"Авто Width (по кадру)", 172, 277, 172, 25, self.col_accent_soft, self.col_accent
-        )
-        self.btn_toggle_width.Font = self.font_small_bold
-        self.btn_toggle_width.Click += self._on_toggle_manual_width
-        self.tooltip.SetToolTip(
-            self.btn_toggle_width,
-            u"По умолчанию пропорции подбираются автоматически по кадру (не превышая заданный размер). Нажмите для ручного ввода Width и Height.",
-        )
-
         self.lbl_width = Label()
-        self.lbl_width.Text = u"Width (Ш):"
-        self.lbl_width.Location = Point(352, 280)
-        self.lbl_width.Size = Size(70, 22)
-        self.lbl_width.Font = self.font_reg
-        self.lbl_width.ForeColor = self.col_muted
+        self.lbl_width.Text = u"Width:"
+        self.lbl_width.Location = Point(156, 280)
+        self.lbl_width.Size = Size(48, 22)
+        self.lbl_width.Font = self.font_small_bold
+        self.lbl_width.ForeColor = self.col_text
         self.card_view.Controls.Add(self.lbl_width)
 
         self.num_width = NumericUpDown()
-        self.num_width.Location = Point(424, 278)
+        self.num_width.Location = Point(206, 278)
         self.num_width.Size = Size(76, 24)
         self.num_width.Minimum = to_decimal(512)
         self.num_width.Maximum = to_decimal(2048)
@@ -3535,18 +3759,54 @@ class ChutesRevitStudioForm(Form):
         self.num_width.Enabled = False
         self.card_view.Controls.Add(self.num_width)
 
-        # --- РЯД ПОЛЗУНКОВ И ЧИСЛОВОГО ВВОДА: Edit Guidance + Num Inference Steps ---
+        self._bind_param_help(
+            self.lbl_sz,
+            [self.num_size],
+            (
+                u"Height (Высота рендера в пикселях, px):\n"
+                u"• Единица измерения: пиксели (px), от 512 до 2048 px (с шагом 64 px).\n"
+                u"• В режиме «Auto Width» задаёт базовое разрешение (максимальную сторону кадра),\n"
+                u"  а вторая сторона рассчитывается автоматически по пропорциям вида Revit.\n"
+                u"• В ручном режиме задаёт точную высоту выходного изображения в пикселях."
+            ),
+        )
+        self._bind_param_help(
+            self.lbl_width,
+            [self.num_width],
+            (
+                u"Width (Ширина рендера в пикселях, px):\n"
+                u"• Единица измерения: пиксели (px), от 512 до 2048 px (с шагом 64 px).\n"
+                u"• В режиме «Auto Width» подбирается автоматически пропорционально кадру Revit.\n"
+                u"• Нажмите кнопку «Auto Width» справа, чтобы разблокировать ручной ввод ширины."
+            ),
+        )
+
+        self.btn_toggle_width = self._create_button(
+            self.card_view, u"Auto Width", 292, 277, 118, 25, self.col_accent_soft, self.col_accent
+        )
+        self.btn_toggle_width.Font = self.font_small_bold
+        self.btn_toggle_width.Click += self._on_toggle_manual_width
+        self.tooltip.SetToolTip(
+            self.btn_toggle_width,
+            (
+                u"Auto Width (Автоматический подбор ширины по пропорциям кадра):\n"
+                u"• По умолчанию включён авто-подбор ширины (Width) в пикселях по пропорциям 3D-вида Revit.\n"
+                u"• Нажмите кнопку, чтобы включить ручной ввод ширины и высоты (Manual W×H)."
+            ),
+        )
+
+        # --- 3 РЯДА ПОЛЗУНКОВ ДРУГ ПОД ДРУГОМ: Edit Guidance, Steps, Seed ---
         self.lbl_cfg = Label()
         self.lbl_cfg.Text = u"Edit Guidance:"
-        self.lbl_cfg.Location = Point(14, 312)
+        self.lbl_cfg.Location = Point(14, 310)
         self.lbl_cfg.Size = Size(88, 22)
         self.lbl_cfg.Font = self.font_small_bold
         self.lbl_cfg.ForeColor = self.col_text
         self.card_view.Controls.Add(self.lbl_cfg)
 
         self.trk_guidance = TrackBar()
-        self.trk_guidance.Location = Point(102, 310)
-        self.trk_guidance.Size = Size(110, 24)
+        self.trk_guidance.Location = Point(104, 308)
+        self.trk_guidance.Size = Size(224, 24)
         self.trk_guidance.Minimum = 0
         self.trk_guidance.Maximum = 200
         self.trk_guidance.Value = 10
@@ -3556,8 +3816,8 @@ class ChutesRevitStudioForm(Form):
         self.card_view.Controls.Add(self.trk_guidance)
 
         self.num_guidance = NumericUpDown()
-        self.num_guidance.Location = Point(214, 310)
-        self.num_guidance.Size = Size(62, 24)
+        self.num_guidance.Location = Point(334, 308)
+        self.num_guidance.Size = Size(86, 24)
         self.num_guidance.DecimalPlaces = 1
         self.num_guidance.Minimum = to_decimal(0.0)
         self.num_guidance.Maximum = to_decimal(20.0)
@@ -3568,17 +3828,17 @@ class ChutesRevitStudioForm(Form):
         self.card_view.Controls.Add(self.num_guidance)
 
         self.lbl_st = Label()
-        self.lbl_st.Text = u"Steps (шаги):"
-        self.lbl_st.Location = Point(290, 312)
-        self.lbl_st.Size = Size(82, 22)
+        self.lbl_st.Text = u"Steps:"
+        self.lbl_st.Location = Point(14, 338)
+        self.lbl_st.Size = Size(88, 22)
         self.lbl_st.Font = self.font_small_bold
         self.lbl_st.ForeColor = self.col_text
         self.card_view.Controls.Add(self.lbl_st)
 
         init_steps_clamped = max(1, min(100, int(init_steps or 4)))
         self.trk_steps = TrackBar()
-        self.trk_steps.Location = Point(372, 310)
-        self.trk_steps.Size = Size(110, 24)
+        self.trk_steps.Location = Point(104, 336)
+        self.trk_steps.Size = Size(224, 24)
         self.trk_steps.Minimum = 1
         self.trk_steps.Maximum = 100
         self.trk_steps.Value = init_steps_clamped
@@ -3588,8 +3848,8 @@ class ChutesRevitStudioForm(Form):
         self.card_view.Controls.Add(self.trk_steps)
 
         self.num_steps = NumericUpDown()
-        self.num_steps.Location = Point(484, 310)
-        self.num_steps.Size = Size(62, 24)
+        self.num_steps.Location = Point(334, 336)
+        self.num_steps.Size = Size(86, 24)
         self.num_steps.Minimum = to_decimal(1)
         self.num_steps.Maximum = to_decimal(100)
         self.num_steps.Value = to_decimal(init_steps_clamped)
@@ -3597,18 +3857,17 @@ class ChutesRevitStudioForm(Form):
         self.num_steps.ValueChanged += self._on_num_steps_changed
         self.card_view.Controls.Add(self.num_steps)
 
-        # --- РЯД SEED (СИД): Ползунок + Ручной ввод + Кнопка случайного сида ---
         self.lbl_seed = Label()
-        self.lbl_seed.Text = u"Seed (сид):"
-        self.lbl_seed.Location = Point(14, 344)
-        self.lbl_seed.Size = Size(74, 22)
+        self.lbl_seed.Text = u"Seed:"
+        self.lbl_seed.Location = Point(14, 366)
+        self.lbl_seed.Size = Size(88, 22)
         self.lbl_seed.Font = self.font_small_bold
         self.lbl_seed.ForeColor = self.col_text
         self.card_view.Controls.Add(self.lbl_seed)
 
         self.trk_seed = TrackBar()
-        self.trk_seed.Location = Point(90, 342)
-        self.trk_seed.Size = Size(195, 24)
+        self.trk_seed.Location = Point(104, 364)
+        self.trk_seed.Size = Size(224, 24)
         self.trk_seed.Minimum = 0
         self.trk_seed.Maximum = 1000000
         self.trk_seed.Value = 42
@@ -3618,8 +3877,8 @@ class ChutesRevitStudioForm(Form):
         self.card_view.Controls.Add(self.trk_seed)
 
         self.num_seed = NumericUpDown()
-        self.num_seed.Location = Point(290, 342)
-        self.num_seed.Size = Size(125, 24)
+        self.num_seed.Location = Point(334, 364)
+        self.num_seed.Size = Size(86, 24)
         self.num_seed.Minimum = to_decimal(0)
         self.num_seed.Maximum = to_decimal(2147483647)
         self.num_seed.Value = to_decimal(42)
@@ -3627,27 +3886,85 @@ class ChutesRevitStudioForm(Form):
         self.num_seed.ValueChanged += self._on_num_seed_changed
         self.card_view.Controls.Add(self.num_seed)
 
+        # Подсказки при наведении и клике для Edit Guidance, Steps и Seed
+        self._bind_param_help(
+            self.lbl_cfg,
+            [self.trk_guidance, self.num_guidance],
+            (
+                u"Edit Guidance (CFG / Сила следования промпту):\n"
+                u"• Определяет, насколько строго нейросеть подчиняется тексту промпта.\n"
+                u"• 1.0 — базовый быстрый режим для Qwen-Image-Edit-2511 и z-image-turbo\n"
+                u"  (естественный свет и текстуры, максимальная скорость).\n"
+                u"• 2.5 – 4.5 — усиленное влияние промпта и «Негативного промпта»\n"
+                u"  (полезно при сложных инструкциях или связке image 1 + image 2).\n"
+                u"• Выше 7.0 — может давать переконтраст и «пережжённые» детали."
+            ),
+        )
+        self._bind_param_help(
+            self.lbl_st,
+            [self.trk_steps, self.num_steps],
+            (
+                u"Steps (Количество шагов нейросети / num_inference_steps):\n"
+                u"• Число итераций очистки изображения от шума при генерации.\n"
+                u"• 4 шага — оптимально для быстрых моделей (Qwen-Image-Edit-2511, z-image-turbo).\n"
+                u"• 6 – 12 шагов — повышенная проработка мелких деталей фасада, листвы и отражений.\n"
+                u"• 20 – 30 шагов — стандарт для классических SDXL-моделей (imageclassic).\n"
+                u"• Больше шагов = выше детализация, но дольше время рендера."
+            ),
+        )
+        self._bind_param_help(
+            self.lbl_seed,
+            [self.trk_seed, self.num_seed],
+            (
+                u"Seed (Сид / Зерно генерации):\n"
+                u"• Стартовое число генератора случайного шума, определяющее вариант деталей.\n"
+                u"• Одинаковый Seed при тех же настройках даёт повторяемый результат —\n"
+                u"  удобно менять только материал или погоду в промпте при той же композиции.\n"
+                u"• Нажмите «Случайный Seed», чтобы получить новый вариант проработки\n"
+                u"  облаков, листвы, освещения и мелких деталей."
+            ),
+        )
+
         self.btn_rand_seed = self._create_button(
-            self.card_view, u"Случайный Seed", 422, 341, 124, 25, self.col_accent_soft, self.col_accent
+            self.card_view, u"Random Seed", 422, 341, 118, 25, self.col_accent_soft, self.col_accent
         )
         self.btn_rand_seed.Font = self.font_small_bold
         self.btn_rand_seed.Click += self._on_random_seed_click
-        self.tooltip.SetToolTip(self.btn_rand_seed, u"Сгенерировать случайное значение Seed")
+        self.tooltip.SetToolTip(
+            self.btn_rand_seed,
+            u"Случайный Seed (Random Seed): сгенерировать новое случайное число Seed для получения нового варианта проработки деталей и освещения.",
+        )
 
-        # --- РЯД ПАПКИ СОХРАНЕНИЯ И КНОПКИ START ---
+        # --- РЯД ПАПКИ СОХРАНЕНИЯ (VAULT) И КНОПКИ START ---
         self.lbl_dir = Label()
-        self.lbl_dir.Text = u"Папка рендеров:"
+        self.lbl_dir.Text = u"Vault:"
         self.lbl_dir.Location = Point(14, 376)
-        self.lbl_dir.Size = Size(110, 22)
-        self.lbl_dir.Font = self.font_reg
-        self.lbl_dir.ForeColor = self.col_muted
+        self.lbl_dir.Size = Size(54, 22)
+        self.lbl_dir.Font = Font("Segoe UI", 9.0, FontStyle.Bold | FontStyle.Underline)
+        self.lbl_dir.ForeColor = self.col_accent
+        self.lbl_dir.Cursor = Cursors.Hand
+        self.tooltip.SetToolTip(
+            self.lbl_dir,
+            u"Vault (Папка сохранения рендеров):\nНажмите на «Vault:», чтобы открыть текущую папку с рендерами в Проводнике Windows.",
+        )
+        self.lbl_dir.MouseEnter += lambda s, a: setattr(
+            self.lbl_dir, "ForeColor", Color.FromArgb(29, 78, 216)
+        )
+        self.lbl_dir.MouseLeave += lambda s, a: setattr(
+            self.lbl_dir, "ForeColor", self.col_accent
+        )
+        self.lbl_dir.Click += self._on_open_vault_dir
         self.card_view.Controls.Add(self.lbl_dir)
 
         self.txt_out_dir = TextBox()
-        self.txt_out_dir.Location = Point(126, 374)
-        self.txt_out_dir.Size = Size(340, 24)
+        self.txt_out_dir.Location = Point(72, 374)
+        self.txt_out_dir.Size = Size(394, 24)
         self.txt_out_dir.Font = self.font_small
         self.txt_out_dir.Text = u_str(init_out_dir)
+        self.tooltip.SetToolTip(
+            self.txt_out_dir,
+            u"Путь к папке сохранения готовых рендеров (Vault). Нажмите на слово «Vault:» слева, чтобы открыть её в Проводнике.",
+        )
         self.card_view.Controls.Add(self.txt_out_dir)
 
         self.btn_browse_dir = self._create_button(
@@ -3793,15 +4110,32 @@ class ChutesRevitStudioForm(Form):
         self.card_prog.Controls.Add(self.txt_log)
 
         # ======================================================================
-        # КНОПКА ВЫХОДА ВНИЗУ СПРАВА ПОД ВСЕМИ БЛОКАМИ: "EXIT | ВЫХОД"
+        # КНОПКА ВЫХОДА ВНИЗУ СПРАВА ПОД ВСЕМИ БЛОКАМИ: "EXIT | ВЫХОД" + ССЫЛКА GITHUB
         # ======================================================================
         self.lbl_bottom_hint = Label()
-        self.lbl_bottom_hint.Text = u"Created by  Alexander Iskra [github.com/alxiskra]"
+        self.lbl_bottom_hint.Text = u"Created by Alexander Iskra"
         self.lbl_bottom_hint.Location = Point(20, 864)
-        self.lbl_bottom_hint.Size = Size(920, 24)
+        self.lbl_bottom_hint.AutoSize = True
         self.lbl_bottom_hint.Font = self.font_small
         self.lbl_bottom_hint.ForeColor = self.col_muted
         self.Controls.Add(self.lbl_bottom_hint)
+
+        self.lbl_github_link = Label()
+        self.lbl_github_link.Text = u"[github.com/alxiskra]"
+        self.lbl_github_link.Location = Point(170, 864)
+        self.lbl_github_link.AutoSize = True
+        self.lbl_github_link.Font = Font("Segoe UI", 8.25, FontStyle.Underline)
+        self.lbl_github_link.ForeColor = self.col_accent
+        self.lbl_github_link.Cursor = Cursors.Hand
+        self.tooltip.SetToolTip(self.lbl_github_link, u"Открыть https://github.com/alxiskra в браузере")
+        self.lbl_github_link.MouseEnter += lambda s, a: setattr(
+            self.lbl_github_link, "ForeColor", Color.FromArgb(29, 78, 216)
+        )
+        self.lbl_github_link.MouseLeave += lambda s, a: setattr(
+            self.lbl_github_link, "ForeColor", self.col_accent
+        )
+        self.lbl_github_link.Click += lambda s, a: open_url_in_browser(u"https://github.com/alxiskra")
+        self.Controls.Add(self.lbl_github_link)
 
         self.btn_exit_bottom = self._create_button(
             self,
@@ -3842,6 +4176,23 @@ class ChutesRevitStudioForm(Form):
         self._kbd_timer.Start()
 
         # --- ИНИЦИАЛИЗАЦИЯ ДАННЫХ (БЕЗ АВТОПЕЧАТИ ВИДА И БЕЗ СЕТЕВЫХ ЗАДЕРЖЕК) ---
+        try:
+            self.MouseDown += self._hide_active_param_help
+            for card_pnl in (self.card_conn, self.card_models, self.card_view, self.card_prev, self.card_prog):
+                card_pnl.MouseDown += self._hide_active_param_help
+                for sub_ctrl in card_pnl.Controls:
+                    if sub_ctrl not in (
+                        self.lbl_cfg,
+                        self.lbl_st,
+                        self.lbl_seed,
+                        self.lbl_sz,
+                        self.lbl_width,
+                        self.lbl_custom_m,
+                        self.lbl_ep,
+                    ):
+                        sub_ctrl.MouseDown += self._hide_active_param_help
+        except Exception:
+            pass
         self._init_profiles_and_inputs(init_api_key, init_base_url)
         self._update_sys_prompt_btn_appearance()
         self._init_all_slots(init_slot1_in, init_slot2_in, init_slot3_in)
@@ -3937,76 +4288,93 @@ class ChutesRevitStudioForm(Form):
             self.slot_combos[s_idx].Location = Point(94, row_y)
             self.slot_combos[s_idx].Size = Size(cmb_w, 24)
 
-        btn_start_y = mid_h - 50
-        dir_row_y = btn_start_y - 32
-        seed_row_y = dir_row_y - 32
-        cfg_steps_row_y = seed_row_y - 32
-        size_row_y = cfg_steps_row_y - 32
+        btn_start_y = mid_h - 48
+        dir_row_y = btn_start_y - 30
+        seed_row_y = dir_row_y - 28
+        steps_row_y = seed_row_y - 28
+        cfg_row_y = steps_row_y - 28
+        size_row_y = cfg_row_y - 29
 
         prompt_hdr_y = 148
         prompt_top_y = 173
-        prompt_h = max(58, size_row_y - prompt_top_y - 8)
+        prompt_h = max(54, size_row_y - prompt_top_y - 7)
         col_pr_gap = 10
         half_pr_w = max(180, int((inner_l - col_pr_gap) / 2))
         right_pr_x = 14 + half_pr_w + col_pr_gap
 
         self.lbl_pr.Location = Point(14, prompt_hdr_y + 2)
+        self.lbl_pr.Size = Size(50, 20)
         self.btn_pos_paste.Location = Point(14 + half_pr_w - 62, prompt_hdr_y - 1)
         self.btn_pos_paste.Size = Size(62, 23)
-        self.btn_pos_tpl.Location = Point(self.btn_pos_paste.Location.X - 3 - 72, prompt_hdr_y - 1)
-        self.btn_pos_tpl.Size = Size(72, 23)
-        sys_btn_w = max(72, min(92, self.btn_pos_tpl.Location.X - 70))
-        self.btn_sys_prompt.Location = Point(max(66, self.btn_pos_tpl.Location.X - 3 - sys_btn_w), prompt_hdr_y - 1)
+        self.btn_pos_tpl.Location = Point(self.btn_pos_paste.Location.X - 3 - 68, prompt_hdr_y - 1)
+        self.btn_pos_tpl.Size = Size(68, 23)
+        sys_btn_x = 64
+        sys_btn_w = max(72, self.btn_pos_tpl.Location.X - 3 - sys_btn_x)
+        self.btn_sys_prompt.Location = Point(sys_btn_x, prompt_hdr_y - 1)
         self.btn_sys_prompt.Size = Size(sys_btn_w, 23)
 
-        self.lbl_neg_pr.Location = Point(right_pr_x, prompt_hdr_y + 2)
         self.btn_neg_paste.Location = Point(right_pr_x + half_pr_w - 62, prompt_hdr_y - 1)
         self.btn_neg_paste.Size = Size(62, 23)
-        self.btn_neg_tpl.Location = Point(self.btn_neg_paste.Location.X - 3 - 72, prompt_hdr_y - 1)
-        self.btn_neg_tpl.Size = Size(72, 23)
+        self.btn_neg_tpl.Location = Point(self.btn_neg_paste.Location.X - 3 - 68, prompt_hdr_y - 1)
+        self.btn_neg_tpl.Size = Size(68, 23)
+        self.lbl_neg_pr.Location = Point(right_pr_x, prompt_hdr_y + 2)
+        self.lbl_neg_pr.Size = Size(max(105, self.btn_neg_tpl.Location.X - right_pr_x - 2), 20)
 
         self.txt_prompt.Location = Point(14, prompt_top_y)
         self.txt_prompt.Size = Size(half_pr_w, prompt_h)
         self.txt_neg_prompt.Location = Point(right_pr_x, prompt_top_y)
         self.txt_neg_prompt.Size = Size(half_pr_w, prompt_h)
 
+        # 3 ряда ползунков строго друг под другом (одинаковая координата X и одинаковая ширина ползунков и полей ввода)
+        slider_x = 104
+        rand_btn_w = 118
+        rand_btn_x = left_w - 14 - rand_btn_w
+        num_box_w = 88
+        num_box_x = rand_btn_x - 6 - num_box_w
+        slider_w = max(80, num_box_x - slider_x - 6)
+
+        # Ряд размеров: Height -> Width -> Кнопка Auto Width (после Height и Width, размером точно как Random Seed)
         self.lbl_sz.Location = Point(14, size_row_y + 3)
-        self.num_size.Location = Point(88, size_row_y)
-        self.num_width.Location = Point(left_w - 14 - 76, size_row_y)
-        self.lbl_width.Location = Point(self.num_width.Location.X - 72, size_row_y + 3)
-        btn_w_x = 170
-        btn_w_width = max(120, self.lbl_width.Location.X - btn_w_x - 8)
-        self.btn_toggle_width.Location = Point(btn_w_x, size_row_y - 1)
-        self.btn_toggle_width.Size = Size(btn_w_width, 25)
+        self.lbl_sz.Size = Size(54, 22)
+        self.num_size.Location = Point(70, size_row_y)
+        self.num_size.Size = Size(76, 24)
 
-        self.lbl_cfg.Location = Point(14, cfg_steps_row_y + 3)
-        self.num_guidance.Location = Point(14 + half_pr_w - 60, cfg_steps_row_y)
-        self.num_guidance.Size = Size(60, 24)
-        trk_cfg_w = max(60, self.num_guidance.Location.X - 102 - 4)
-        self.trk_guidance.Location = Point(102, cfg_steps_row_y)
-        self.trk_guidance.Size = Size(trk_cfg_w, 24)
+        self.lbl_width.Location = Point(156, size_row_y + 3)
+        self.lbl_width.Size = Size(48, 22)
+        self.num_width.Location = Point(206, size_row_y)
+        self.num_width.Size = Size(76, 24)
 
-        self.lbl_st.Location = Point(right_pr_x, cfg_steps_row_y + 3)
-        self.num_steps.Location = Point(left_w - 14 - 60, cfg_steps_row_y)
-        self.num_steps.Size = Size(60, 24)
-        trk_st_x = right_pr_x + 82
-        trk_st_w = max(60, self.num_steps.Location.X - trk_st_x - 4)
-        self.trk_steps.Location = Point(trk_st_x, cfg_steps_row_y)
-        self.trk_steps.Size = Size(trk_st_w, 24)
+        self.btn_toggle_width.Location = Point(292, size_row_y - 1)
+        self.btn_toggle_width.Size = Size(rand_btn_w, 25)
+
+        self.lbl_cfg.Location = Point(14, cfg_row_y + 3)
+        self.lbl_cfg.Size = Size(88, 22)
+        self.trk_guidance.Location = Point(slider_x, cfg_row_y)
+        self.trk_guidance.Size = Size(slider_w, 24)
+        self.num_guidance.Location = Point(num_box_x, cfg_row_y)
+        self.num_guidance.Size = Size(num_box_w, 24)
+
+        self.lbl_st.Location = Point(14, steps_row_y + 3)
+        self.lbl_st.Size = Size(88, 22)
+        self.trk_steps.Location = Point(slider_x, steps_row_y)
+        self.trk_steps.Size = Size(slider_w, 24)
+        self.num_steps.Location = Point(num_box_x, steps_row_y)
+        self.num_steps.Size = Size(num_box_w, 24)
 
         self.lbl_seed.Location = Point(14, seed_row_y + 3)
-        self.btn_rand_seed.Location = Point(left_w - 14 - 118, seed_row_y - 1)
-        self.btn_rand_seed.Size = Size(118, 25)
-        self.num_seed.Location = Point(self.btn_rand_seed.Location.X - 6 - 118, seed_row_y)
-        self.num_seed.Size = Size(118, 24)
-        trk_seed_w = max(80, self.num_seed.Location.X - 90 - 6)
-        self.trk_seed.Location = Point(90, seed_row_y)
-        self.trk_seed.Size = Size(trk_seed_w, 24)
+        self.lbl_seed.Size = Size(88, 22)
+        self.trk_seed.Location = Point(slider_x, seed_row_y)
+        self.trk_seed.Size = Size(slider_w, 24)
+        self.num_seed.Location = Point(num_box_x, seed_row_y)
+        self.num_seed.Size = Size(num_box_w, 24)
+        self.btn_rand_seed.Location = Point(rand_btn_x, seed_row_y - 1)
+        self.btn_rand_seed.Size = Size(rand_btn_w, 25)
 
         self.lbl_dir.Location = Point(14, dir_row_y + 3)
+        self.lbl_dir.Size = Size(54, 22)
         self.btn_browse_dir.Location = Point(left_w - 14 - 75, dir_row_y - 1)
-        self.txt_out_dir.Location = Point(126, dir_row_y)
-        self.txt_out_dir.Size = Size(max(150, self.btn_browse_dir.Location.X - 132), 24)
+        self.txt_out_dir.Location = Point(72, dir_row_y)
+        self.txt_out_dir.Size = Size(max(150, self.btn_browse_dir.Location.X - 78), 24)
 
         self.btn_generate.Location = Point(14, btn_start_y)
         self.btn_generate.Size = Size(inner_l, 42)
@@ -4068,8 +4436,8 @@ class ChutesRevitStudioForm(Form):
         self.txt_log.Size = Size(total_w - 28, 44)
 
         exit_y = prog_y + prog_h + 6
-        self.lbl_bottom_hint.Location = Point(margin + 2, exit_y + 7)
-        self.lbl_bottom_hint.Size = Size(max(300, total_w - 200), 22)
+        self.lbl_bottom_hint.Location = Point(margin + 2, exit_y + 8)
+        self.lbl_github_link.Location = Point(self.lbl_bottom_hint.Right + 4, exit_y + 8)
         self.btn_exit_bottom.Location = Point(cw - margin - 180, exit_y)
         self.btn_exit_bottom.Size = Size(180, 34)
 
@@ -4142,6 +4510,12 @@ class ChutesRevitStudioForm(Form):
 
     def _on_form_closed(self, sender, args):
         try:
+            if hasattr(self, "_param_hover_timer") and self._param_hover_timer is not None:
+                self._param_hover_timer.Stop()
+                self._param_hover_timer.Dispose()
+        except Exception:
+            pass
+        try:
             if hasattr(self, "_kbd_timer") and self._kbd_timer is not None:
                 self._kbd_timer.Stop()
                 self._kbd_timer.Dispose()
@@ -4166,11 +4540,11 @@ class ChutesRevitStudioForm(Form):
             u_str(self.profiles_data.get("system_prompt", u"")).strip()
         )
         if is_active:
-            self.btn_sys_prompt.Text = u"* Системный [ВКЛ]"
+            self.btn_sys_prompt.Text = u"Sys.Prompt [ON]"
             self.btn_sys_prompt.BackColor = self.col_accent_soft
             self.btn_sys_prompt.ForeColor = self.col_accent
         else:
-            self.btn_sys_prompt.Text = u"* Системный"
+            self.btn_sys_prompt.Text = u"Sys.Prompt"
             self.btn_sys_prompt.BackColor = self.col_card
             self.btn_sys_prompt.ForeColor = self.col_text
 
@@ -4269,17 +4643,17 @@ class ChutesRevitStudioForm(Form):
         self.manual_width_enabled = not self.manual_width_enabled
         if self.manual_width_enabled:
             self.num_width.Enabled = True
-            self.btn_toggle_width.Text = u"Ручной W×H (включён)"
+            self.btn_toggle_width.Text = u"Manual W×H"
             self.btn_toggle_width.BackColor = self.col_emerald
             self.btn_toggle_width.ForeColor = Color.White
-            self.log_step(u"Включён режим ручного задания Width (Ш) и Height (В).", progress_val=0)
+            self.log_step(u"Включён режим ручного задания Width и Height (в пикселях).", progress_val=0)
         else:
             self.num_width.Enabled = False
-            self.btn_toggle_width.Text = u"Авто Width (по кадру)"
+            self.btn_toggle_width.Text = u"Auto Width"
             self.btn_toggle_width.BackColor = self.col_accent_soft
             self.btn_toggle_width.ForeColor = self.col_accent
             self._recalc_auto_width_preview()
-            self.log_step(u"Включён автоматический подгон пропорций по кадру (без превышения базового размера).", progress_val=0)
+            self.log_step(u"Включён режим Auto Width (автоматический подбор ширины по пропорциям кадра).", progress_val=0)
 
     def _on_height_value_changed(self, sender, args):
         if not self.manual_width_enabled:
@@ -4443,7 +4817,7 @@ class ChutesRevitStudioForm(Form):
         raw_m = u_str(self.txt_custom_model.Text).strip()
         if not raw_m:
             MessageBox.Show(
-                u"Введите название или ID модели в поле «Своя модель» (и при необходимости укажите Эндпоинт ниже), затем нажмите «+ В профиль».",
+                u"Введите название или ID модели в поле «Add Model» (и при необходимости укажите Endpoint ниже), затем нажмите «+ В профиль».",
                 u"Добавление модели",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information,
@@ -4998,9 +5372,17 @@ class ChutesRevitStudioForm(Form):
                 live_bitmap=self.pic_result.Image,
             )
 
+    def _on_open_vault_dir(self, sender, args):
+        out_dir_curr = u_str(self.txt_out_dir.Text).strip()
+        if not out_dir_curr:
+            desktop = Environment.GetFolderPath(Environment.SpecialFolder.Desktop)
+            out_dir_curr = Path.Combine(desktop, u"Chutes_Renders")
+            self.txt_out_dir.Text = out_dir_curr
+        open_folder_in_explorer(out_dir_curr)
+
     def _on_browse_out_dir(self, sender, args):
         dlg = FolderBrowserDialog()
-        dlg.Description = u"Выберите папку для сохранения AI-рендеров"
+        dlg.Description = u"Выберите папку (Vault) для сохранения AI-рендеров"
         dlg.SelectedPath = u_str(self.txt_out_dir.Text)
         if dlg.ShowDialog() == DialogResult.OK:
             self.txt_out_dir.Text = u_str(dlg.SelectedPath)
