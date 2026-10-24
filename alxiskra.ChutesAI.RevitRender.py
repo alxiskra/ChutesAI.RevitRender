@@ -2203,6 +2203,13 @@ def style_subdialog_controls(dlg, is_dark=False):
             dlg.BackColor = Color.FromArgb(22, 27, 36)
         for ctrl in dlg.Controls:
             if isinstance(ctrl, Button):
+                role = u_str(getattr(ctrl, "Tag", u""))
+                if role == u"primary_dark":
+                    bg = GRAPHITE_BTN_DARK if is_dark else GRAPHITE_BTN_LIGHT
+                    ctrl.ForeColor = Color.White
+                    brd = Color.FromArgb(82, 98, 122) if is_dark else Color.FromArgb(51, 65, 85)
+                    apply_button_hover(ctrl, bg, brd)
+                    continue
                 bg = ctrl.BackColor
                 if is_dark:
                     if int(bg.R) == 255 and int(bg.G) == 255 and int(bg.B) == 255:
@@ -2342,11 +2349,11 @@ def show_prompt_templates_dialog(parent_form, profiles_data, target_textbox, is_
     dlg = Form()
     dlg.Text = u"Negative Prompt Templates" if is_negative else u"Prompt Templates"
     dlg.Size = Size(760, 480)
-    dlg.MinimumSize = Size(680, 420)
-    dlg.FormBorderStyle = FormBorderStyle.FixedDialog
+    dlg.MinimumSize = Size(700, 430)
+    dlg.FormBorderStyle = FormBorderStyle.Sizable
     dlg.StartPosition = FormStartPosition.CenterParent
-    dlg.MaximizeBox = False
-    dlg.MinimizeBox = False
+    dlg.MaximizeBox = True
+    dlg.MinimizeBox = True
     dlg.BackColor = Color.FromArgb(246, 248, 250)
 
     font_sec = Font("Segoe UI", 9.5, FontStyle.Bold)
@@ -2354,7 +2361,7 @@ def show_prompt_templates_dialog(parent_form, profiles_data, target_textbox, is_
     font_small = Font("Segoe UI", 8.25, FontStyle.Regular)
 
     lbl_list = Label()
-    lbl_list.Text = u"Saved Templates:"
+    lbl_list.Text = u"Saved Templates"
     lbl_list.Font = font_sec
     lbl_list.ForeColor = Color.FromArgb(15, 23, 42)
     lbl_list.Location = Point(16, 14)
@@ -2368,7 +2375,7 @@ def show_prompt_templates_dialog(parent_form, profiles_data, target_textbox, is_
     dlg.Controls.Add(lst_tpl)
 
     lbl_name = Label()
-    lbl_name.Text = u"Template Name:"
+    lbl_name.Text = u"Template Name"
     lbl_name.Font = font_sec
     lbl_name.ForeColor = Color.FromArgb(15, 23, 42)
     lbl_name.Location = Point(302, 14)
@@ -2383,7 +2390,7 @@ def show_prompt_templates_dialog(parent_form, profiles_data, target_textbox, is_
     dlg.Controls.Add(txt_name)
 
     lbl_body = Label()
-    lbl_body.Text = u"Template Text:"
+    lbl_body.Text = u"Template Text"
     lbl_body.Font = font_sec
     lbl_body.ForeColor = Color.FromArgb(15, 23, 42)
     lbl_body.Location = Point(302, 70)
@@ -2391,7 +2398,7 @@ def show_prompt_templates_dialog(parent_form, profiles_data, target_textbox, is_
     dlg.Controls.Add(lbl_body)
 
     btn_from_current = Button()
-    btn_from_current.Text = u"Use Current Prompt Text"
+    btn_from_current.Text = u"Insert Current Prompt Text"
     btn_from_current.FlatStyle = FlatStyle.Flat
     btn_from_current.BackColor = Color.FromArgb(239, 246, 255)
     btn_from_current.ForeColor = Color.FromArgb(37, 99, 235)
@@ -2411,7 +2418,7 @@ def show_prompt_templates_dialog(parent_form, profiles_data, target_textbox, is_
     dlg.Controls.Add(txt_body)
 
     btn_add_new = Button()
-    btn_add_new.Text = u"+ Save as New"
+    btn_add_new.Text = u"Save as New Template"
     btn_add_new.FlatStyle = FlatStyle.Flat
     btn_add_new.BackColor = Color.FromArgb(239, 246, 255)
     btn_add_new.ForeColor = Color.FromArgb(37, 99, 235)
@@ -2422,7 +2429,7 @@ def show_prompt_templates_dialog(parent_form, profiles_data, target_textbox, is_
     dlg.Controls.Add(btn_add_new)
 
     btn_update_sel = Button()
-    btn_update_sel.Text = u"Update Selected"
+    btn_update_sel.Text = u"Update Template"
     btn_update_sel.FlatStyle = FlatStyle.Flat
     btn_update_sel.BackColor = Color.White
     btn_update_sel.ForeColor = Color.FromArgb(30, 41, 59)
@@ -2444,33 +2451,34 @@ def show_prompt_templates_dialog(parent_form, profiles_data, target_textbox, is_
     dlg.Controls.Add(btn_del_sel)
 
     btn_apply_replace = Button()
-    btn_apply_replace.Text = u"Apply (Replace)"
+    btn_apply_replace.Text = u"Replace Current"
     btn_apply_replace.FlatStyle = FlatStyle.Flat
     btn_apply_replace.BackColor = Color.FromArgb(16, 185, 129)
     btn_apply_replace.ForeColor = Color.White
     btn_apply_replace.Font = font_sec
     btn_apply_replace.Location = Point(302, 388)
-    btn_apply_replace.Size = Size(196, 36)
+    btn_apply_replace.Size = Size(166, 36)
     btn_apply_replace.Cursor = Cursors.Hand
     dlg.Controls.Add(btn_apply_replace)
 
     btn_apply_append = Button()
-    btn_apply_append.Text = u"+ Append"
+    btn_apply_append.Text = u"Add to Current"
     btn_apply_append.FlatStyle = FlatStyle.Flat
     btn_apply_append.BackColor = Color.FromArgb(37, 99, 235)
     btn_apply_append.ForeColor = Color.White
     btn_apply_append.Font = font_sec
-    btn_apply_append.Location = Point(506, 388)
-    btn_apply_append.Size = Size(136, 36)
+    btn_apply_append.Location = Point(476, 388)
+    btn_apply_append.Size = Size(166, 36)
     btn_apply_append.Cursor = Cursors.Hand
     dlg.Controls.Add(btn_apply_append)
 
     btn_close = Button()
     btn_close.Text = u"Close"
+    btn_close.Tag = u"primary_dark"
     btn_close.FlatStyle = FlatStyle.Flat
-    btn_close.BackColor = Color.White
-    btn_close.ForeColor = Color.FromArgb(30, 41, 59)
-    btn_close.Font = font_reg
+    btn_close.BackColor = Color.FromArgb(71, 85, 105)
+    btn_close.ForeColor = Color.White
+    btn_close.Font = font_sec
     btn_close.Location = Point(650, 388)
     btn_close.Size = Size(76, 36)
     btn_close.Cursor = Cursors.Hand
@@ -2558,6 +2566,48 @@ def show_prompt_templates_dialog(parent_form, profiles_data, target_textbox, is_
     btn_apply_append.Click += _on_append
     lst_tpl.DoubleClick += _on_replace
 
+    def _layout_tpl(s=None, a=None):
+        cw = dlg.ClientSize.Width
+        ch = dlg.ClientSize.Height
+        if cw < 500 or ch < 320:
+            return
+        left_w = max(240, int(cw * 0.36))
+        right_x = 16 + left_w + 16
+        right_w = max(320, cw - right_x - 16)
+        bot_y = ch - 52
+        mid_btns_y = bot_y - 42
+
+        lst_tpl.Location = Point(16, 38)
+        lst_tpl.Size = Size(left_w, max(180, bot_y - 38 + 36))
+
+        lbl_name.Location = Point(right_x, 14)
+        txt_name.Location = Point(right_x, 38)
+        txt_name.Size = Size(right_w, 24)
+
+        lbl_body.Location = Point(right_x, 70)
+        btn_from_current.Location = Point(right_x + right_w - 190, 66)
+        txt_body.Location = Point(right_x, 94)
+        txt_body.Size = Size(right_w, max(120, mid_btns_y - 94 - 8))
+
+        del_w = 100
+        pair_top_w = max(140, (right_w - del_w - 12) // 2)
+        btn_add_new.Location = Point(right_x, mid_btns_y)
+        btn_add_new.Size = Size(pair_top_w, 28)
+        btn_update_sel.Location = Point(right_x + pair_top_w + 6, mid_btns_y)
+        btn_update_sel.Size = Size(pair_top_w, 28)
+        btn_del_sel.Location = Point(right_x + right_w - del_w, mid_btns_y)
+        btn_del_sel.Size = Size(del_w, 28)
+
+        close_w = 84
+        pair_bot_w = max(150, (right_w - close_w - 16) // 2)
+        btn_apply_replace.Location = Point(right_x, bot_y)
+        btn_apply_replace.Size = Size(pair_bot_w, 36)
+        btn_apply_append.Location = Point(right_x + pair_bot_w + 8, bot_y)
+        btn_apply_append.Size = Size(pair_bot_w, 36)
+        btn_close.Location = Point(right_x + right_w - close_w, bot_y)
+        btn_close.Size = Size(close_w, 36)
+
+    dlg.Resize += _layout_tpl
     _refresh_list(0)
     is_dark_dlg = bool(profiles_data.get("ui_dark_mode", False))
     style_subdialog_controls(dlg, is_dark=is_dark_dlg)
@@ -2569,6 +2619,7 @@ def show_prompt_templates_dialog(parent_form, profiles_data, target_textbox, is_
             txt_body.ForeColor = PROMPT_COLOR_DARK if is_dark_dlg else PROMPT_COLOR_LIGHT
     except Exception:
         pass
+    _layout_tpl()
     dlg.ShowDialog(parent_form)
 
 
@@ -2692,12 +2743,12 @@ def show_comparison_window(input_items, res_path, view_label, prompt_text, model
         valid_inputs.append([u"AI Render", u_str(res_path)])
 
     after_path = u_str(res_path) if has_result else valid_inputs[-1][1]
-    after_label = u"AI Render ({})".format(u_str(model_title)) if has_result else valid_inputs[-1][0]
+    after_label = u_str(model_title) if has_result else valid_inputs[-1][0]
 
     form = Form()
-    form.Text = u"Before / After Comparison — {}  |  {}".format(u_str(view_label), u_str(model_title))
+    form.Text = u"Before / After"
     form.Size = Size(1240, 840)
-    form.MinimumSize = Size(880, 620)
+    form.MinimumSize = Size(960, 620)
     form.FormBorderStyle = FormBorderStyle.Sizable
     form.StartPosition = FormStartPosition.CenterScreen
     form.MaximizeBox = True
@@ -2720,14 +2771,14 @@ def show_comparison_window(input_items, res_path, view_label, prompt_text, model
     lbl_sel.ForeColor = Color.FromArgb(226, 232, 240)
     lbl_sel.Font = font_bold
     lbl_sel.Location = Point(16, 15)
-    lbl_sel.Size = Size(138, 22)
+    lbl_sel.Size = Size(104, 22)
     pnl_top.Controls.Add(lbl_sel)
 
     cmb_input = ComboBox()
     cmb_input.DropDownStyle = ComboBoxStyle.DropDownList
     cmb_input.Font = font_reg
-    cmb_input.Location = Point(156, 12)
-    cmb_input.Size = Size(350, 26)
+    cmb_input.Location = Point(124, 12)
+    cmb_input.Size = Size(300, 26)
     for item in valid_inputs:
         cmb_input.Items.Add(item[0])
     if cmb_input.Items.Count > 0:
@@ -2735,13 +2786,13 @@ def show_comparison_window(input_items, res_path, view_label, prompt_text, model
     pnl_top.Controls.Add(cmb_input)
 
     btn_add_file = Button()
-    btn_add_file.Text = u"Load File..."
+    btn_add_file.Text = u"Select File..."
     btn_add_file.FlatStyle = FlatStyle.Flat
     btn_add_file.FlatAppearance.BorderColor = Color.FromArgb(71, 85, 105)
     btn_add_file.BackColor = Color.FromArgb(51, 65, 85)
     btn_add_file.ForeColor = Color.White
     btn_add_file.Font = font_small
-    btn_add_file.Location = Point(514, 11)
+    btn_add_file.Location = Point(432, 11)
     btn_add_file.Size = Size(106, 27)
     btn_add_file.Cursor = Cursors.Hand
     pnl_top.Controls.Add(btn_add_file)
@@ -2789,14 +2840,14 @@ def show_comparison_window(input_items, res_path, view_label, prompt_text, model
     form.Controls.Add(pnl_bottom)
 
     btn_only_after = Button()
-    btn_only_after.Text = u"◀ AFTER ONLY"
+    btn_only_after.Text = u"AFTER"
     btn_only_after.FlatStyle = FlatStyle.Flat
     btn_only_after.FlatAppearance.BorderColor = Color.FromArgb(71, 85, 105)
     btn_only_after.BackColor = Color.FromArgb(51, 65, 85)
     btn_only_after.ForeColor = Color.White
     btn_only_after.Font = font_small
     btn_only_after.Location = Point(16, 8)
-    btn_only_after.Size = Size(112, 26)
+    btn_only_after.Size = Size(102, 26)
     btn_only_after.Cursor = Cursors.Hand
     pnl_bottom.Controls.Add(btn_only_after)
 
@@ -2807,19 +2858,19 @@ def show_comparison_window(input_items, res_path, view_label, prompt_text, model
     btn_center_split.BackColor = Color.FromArgb(16, 185, 129)
     btn_center_split.ForeColor = Color.White
     btn_center_split.Font = font_small
-    btn_center_split.Location = Point(134, 8)
-    btn_center_split.Size = Size(76, 26)
+    btn_center_split.Location = Point(124, 8)
+    btn_center_split.Size = Size(80, 26)
     btn_center_split.Cursor = Cursors.Hand
     pnl_bottom.Controls.Add(btn_center_split)
 
     btn_only_before = Button()
-    btn_only_before.Text = u"BEFORE ONLY ▶"
+    btn_only_before.Text = u"BEFORE"
     btn_only_before.FlatStyle = FlatStyle.Flat
     btn_only_before.FlatAppearance.BorderColor = Color.FromArgb(71, 85, 105)
     btn_only_before.BackColor = Color.FromArgb(51, 65, 85)
     btn_only_before.ForeColor = Color.White
     btn_only_before.Font = font_small
-    btn_only_before.Location = Point(216, 8)
+    btn_only_before.Location = Point(210, 8)
     btn_only_before.Size = Size(102, 26)
     btn_only_before.Cursor = Cursors.Hand
     pnl_bottom.Controls.Add(btn_only_before)
@@ -2855,7 +2906,8 @@ def show_comparison_window(input_items, res_path, view_label, prompt_text, model
     btn_close = Button()
     btn_close.Text = u"CLOSE"
     btn_close.FlatStyle = FlatStyle.Flat
-    btn_close.BackColor = Color.FromArgb(220, 38, 38)
+    btn_close.FlatAppearance.BorderColor = Color.FromArgb(82, 98, 122)
+    btn_close.BackColor = GRAPHITE_BTN_DARK
     btn_close.ForeColor = Color.White
     btn_close.Font = font_bold
     btn_close.Size = Size(156, 34)
@@ -2995,21 +3047,25 @@ def show_comparison_window(input_items, res_path, view_label, prompt_text, model
             br_badge_after = SolidBrush(Color.FromArgb(210, 5, 150, 105))
             br_white = SolidBrush(Color.White)
 
-            if split_px > 95:
-                lbl_left_text = u"BEFORE: " + state["before_title"]
-                if len(lbl_left_text) > 34:
-                    lbl_left_text = lbl_left_text[:31] + u"..."
-                badge_w = min(split_px - 16, max(110, len(lbl_left_text) * 7 + 18))
-                g.FillRectangle(br_badge_bg, dx + 10, dy + 10, badge_w, 26)
-                g.DrawString(lbl_left_text, font_badge, br_white, float(dx + 16), float(dy + 14))
+            badge_fixed_w = 176
+            badge_fixed_h = 26
 
-            if (dw - split_px) > 95:
-                lbl_right_text = u"AFTER: AI Render"
-                badge_rw = 142
-                rx = dx + dw - badge_rw - 10
+            if split_px > (badge_fixed_w + 18):
+                short_before = u_str(state["before_title"]).split(u"(")[0].strip()
+                if not short_before:
+                    short_before = u"Scene #1"
+                lbl_left_text = u"BEFORE: " + short_before
+                if len(lbl_left_text) > 22:
+                    lbl_left_text = lbl_left_text[:20] + u".."
+                g.FillRectangle(br_badge_bg, dx + 10, dy + 10, badge_fixed_w, badge_fixed_h)
+                g.DrawString(lbl_left_text, font_badge, br_white, float(dx + 18), float(dy + 14))
+
+            if (dw - split_px) > (badge_fixed_w + 18):
+                lbl_right_text = u"AFTER: AI GENERATION"
+                rx = dx + dw - badge_fixed_w - 10
                 if rx > line_x + 8:
-                    g.FillRectangle(br_badge_after, rx, dy + 10, badge_rw, 26)
-                    g.DrawString(lbl_right_text, font_badge, br_white, float(rx + 10), float(dy + 14))
+                    g.FillRectangle(br_badge_after, rx, dy + 10, badge_fixed_w, badge_fixed_h)
+                    g.DrawString(lbl_right_text, font_badge, br_white, float(rx + 14), float(dy + 14))
 
             br_badge_bg.Dispose()
             br_badge_after.Dispose()
@@ -3125,7 +3181,15 @@ def show_comparison_window(input_items, res_path, view_label, prompt_text, model
         pnl_top.Size = Size(cw, top_h)
         btn_full_after.Location = Point(cw - 16 - 112, 11)
         btn_full_before.Location = Point(btn_full_after.Location.X - 8 - 98, 11)
-        lbl_vs.Size = Size(max(140, btn_full_before.Location.X - 640), 22)
+
+        avail_left = max(420, btn_full_before.Location.X - 12)
+        cmb_w = max(180, min(330, avail_left - 124 - 106 - 190))
+        cmb_input.Location = Point(124, 12)
+        cmb_input.Size = Size(cmb_w, 26)
+        btn_add_file.Location = Point(124 + cmb_w + 8, 11)
+        lbl_vs_x = btn_add_file.Location.X + btn_add_file.Width + 12
+        lbl_vs.Location = Point(lbl_vs_x, 15)
+        lbl_vs.Size = Size(max(120, btn_full_before.Location.X - lbl_vs_x - 8), 22)
 
         pic_canvas.Location = Point(0, top_h)
         pic_canvas.Size = Size(cw, canvas_h)
@@ -3769,9 +3833,8 @@ class ChutesRevitStudioForm(Form):
             self.lbl_custom_m,
             [self.txt_custom_model],
             (
-                u"Add Model (Своя модель в профиль)\n"
                 u"Позволяет добавить любую модель Chutes.ai или внешнего провайдера\n"
-                u"› Введите имя или slug модели и нажмите + To Profile\n"
+                u"› Введите имя модели и нажмите + To Profile\n"
                 u"› Сохранённые модели отображаются в списке со значком ★"
             ),
         )
@@ -3815,10 +3878,9 @@ class ChutesRevitStudioForm(Form):
             self.lbl_ep,
             [self.txt_endpoint],
             (
-                u"Endpoint (Прямой URL генерации API)\n"
-                u"Адрес, на который студия отправляет запрос генерации изображения\n"
+                u"Адрес, на который приложение отправляет запрос генерации изображения\n"
                 u"› Подставляется автоматически при выборе модели в списке выше\n"
-                u"› Можно изменить вручную для своего chute или локального сервера"
+                u"› Можно изменить вручную для своей модели или локального сервера"
             ),
         )
 
@@ -4318,7 +4380,7 @@ class ChutesRevitStudioForm(Form):
         self.card_prev.Controls.Add(self.lbl_sec4)
 
         self.btn_open_compare = self._create_button(
-            self.card_prev, u"Before / After", 506, 7, 114, 25, self.col_card, self.col_accent
+            self.card_prev, u"Before / After", 506, 7, 114, 25, self.col_card, self.col_muted, role=u"surface"
         )
         self.btn_open_compare.Font = self.font_small_bold
         self.btn_open_compare.Enabled = False
@@ -4441,20 +4503,20 @@ class ChutesRevitStudioForm(Form):
         self.Controls.Add(self.lbl_bottom_hint)
 
         self.lbl_github_link = Label()
-        self.lbl_github_link.Text = u"[github.com/alxiskra]"
+        self.lbl_github_link.Text = u"[github.com/alxiskra/ChutesAI.RevitRender]"
         self.lbl_github_link.Location = Point(170, 864)
         self.lbl_github_link.AutoSize = True
         self.lbl_github_link.Font = Font("Segoe UI", 8.25, FontStyle.Underline)
         self.lbl_github_link.ForeColor = self.col_accent
         self.lbl_github_link.Cursor = Cursors.Hand
-        self.tooltip.SetToolTip(self.lbl_github_link, u"Открыть страницу автора https://github.com/alxiskra в браузере")
+        self.tooltip.SetToolTip(self.lbl_github_link, u"Открыть страницу проекта https://github.com/alxiskra/ChutesAI.RevitRender в браузере")
         self.lbl_github_link.MouseEnter += lambda s, a: setattr(
             self.lbl_github_link, "ForeColor", Color.FromArgb(147, 197, 253) if self.is_dark_mode else Color.FromArgb(29, 78, 216)
         )
         self.lbl_github_link.MouseLeave += lambda s, a: setattr(
             self.lbl_github_link, "ForeColor", self.col_accent
         )
-        self.lbl_github_link.Click += lambda s, a: open_url_in_browser(u"https://github.com/alxiskra")
+        self.lbl_github_link.Click += lambda s, a: open_url_in_browser(u"https://github.com/alxiskra/ChutesAI.RevitRender")
         self.Controls.Add(self.lbl_github_link)
 
         self.btn_exit_bottom = self._create_button(
@@ -5041,6 +5103,7 @@ class ChutesRevitStudioForm(Form):
         self._style_button_by_role(self.btn_exit_bottom)
         self.pic_result.BackColor = self.col_slot_active
         self._update_sys_prompt_btn_appearance()
+        self._update_compare_btn_appearance()
         self._sync_width_btn_appearance()
         for s_idx in range(3):
             try:
@@ -5060,6 +5123,13 @@ class ChutesRevitStudioForm(Form):
             self.btn_sys_prompt.Text = u"Sys.Prompt [off]"
             self.btn_sys_prompt.Tag = u"surface"
         self._style_button_by_role(self.btn_sys_prompt)
+
+    def _update_compare_btn_appearance(self):
+        has_res = bool(self.btn_open_compare.Enabled) and bool(
+            self.result_image_path and File.Exists(self.result_image_path)
+        )
+        self.btn_open_compare.Tag = u"emerald_soft" if has_res else u"surface"
+        self._style_button_by_role(self.btn_open_compare)
 
     def _on_sys_prompt_click(self, sender, args):
         changed = show_system_prompt_dialog(self, self.profiles_data)
@@ -6252,6 +6322,7 @@ class ChutesRevitStudioForm(Form):
                     self.pic_result.Image = res_img
 
                 self.btn_open_compare.Enabled = True
+                self._update_compare_btn_appearance()
                 self.execution_succeeded = True
 
                 self.status_message = u"HTTP 200 | model: {} | imgs: {} | {}x{} | steps: {} | cfg: {} | seed: {} | {}s".format(
