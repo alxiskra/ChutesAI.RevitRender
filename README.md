@@ -1,14 +1,14 @@
 # ChutesAI.RevitRender
 
-**AI-визуализация видов Autodesk Revit с использованием генеративных моделей на платформе Chutes.ai.**
+**ChutesAI.RevitRender** — приложение для AI-визуализации видов Autodesk Revit с использованием генеративных open-source моделей, доступных на платформе [Chutes.ai](https://chutes.ai/).
 
-**Автор:** [Alexander Iskra](https://github.com/alxiskra)
+**ChutesAI.RevitRender** is an application for AI-powered visualization of Autodesk Revit views using generative open-source models available on the [Chutes.ai](https://chutes.ai/) platform.
+
+**Author:** [Alexander Iskra](https://github.com/alxiskra)
 
 ---
 
-## 🇷🇺 Русский
-
-**ChutesAI.RevitRender** — приложение для AI-визуализации видов из Autodesk Revit с использованием генеративных open-source моделей, доступных на платформе [Chutes.ai](https://chutes.ai/).
+## 🇷🇺 Russian
 
 Приложение работает в среде Dynamo: код запускается через стандартный узел `Python Script`.
 
@@ -35,7 +35,7 @@
 Для работы с генеративными моделями необходимо:
 
 1. Получить API-ключ формата `cpk_...` на платформе [Chutes.ai](https://chutes.ai/).
-2. Вставить ключ в соответствующее поле приложения.
+2. Вставить API-ключ в соответствующее поле приложения.
 3. Выбрать модель и настроить параметры генерации.
 4. Нажать `Save`, чтобы сохранить API-ключ и настройки профиля.
 
@@ -45,9 +45,7 @@
 
 ---
 
-## 🇬🇧 English
-
-**ChutesAI.RevitRender** is an application for AI-powered visualization of Autodesk Revit views using generative open-source models available on the [Chutes.ai](https://chutes.ai/) platform.
+## 🇺🇸 English
 
 The application runs within the Dynamo environment by executing the code in a standard `Python Script` node.
 
@@ -55,13 +53,13 @@ The application runs within the Dynamo environment by executing the code in a st
 
 - **Autodesk Revit 2020–2025 compatibility:**
   - **Revit 2020 / 2021:** Dynamo 2.x, IronPython 2.7, .NET Framework 4.7.2 / 4.8.
-  - **Revit 2022 / 2023 / 2024 / 2025:** Dynamo 2.10+, IronPython 2.7 and CPython 3 / PythonNet.
+  - **Revit 2022 / 2023 / 2024 / 2025:** Dynamo 2.10+, IronPython 2.7, and CPython 3 / PythonNet.
 
-- **Multi-reference image editing:** support for **Qwen-Image-Edit-2511** with multiple reference images:
+- **Multi-reference image editing:** supports **Qwen-Image-Edit-2511** with multiple reference images:
   - Scene #1 — the original Revit view defining the scene geometry.
   - Scene #2 / Scene #3 — reference images for materials, furniture, artwork, or other elements to incorporate into the scene.
 
-- **Chutes.ai model support:** connect to the provider and update the available model list online using `Connect / Refresh Provider Models`.
+- **Chutes.ai model support:** connect to the provider and refresh the list of available models online using `Connect / Refresh Provider Models`.
 
 - **Prompt management:** includes a `Main Prompt`, `Negative Prompt`, and customizable `System Prompt`.
 
@@ -84,9 +82,9 @@ Configuration profiles are saved in `profiles.json` in the following directory:
 
 ---
 
-## Author
+## Author / Автор
 
-**Alexander Iskra**
+**Alexander Iskra / Александр Искра**
 
 - GitHub: [alxiskra](https://github.com/alxiskra)
 
