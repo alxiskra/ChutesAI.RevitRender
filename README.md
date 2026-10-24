@@ -8,9 +8,9 @@
 
 ---
 
-## 🇷🇺 Russian
+## RU
 
-Приложение работает в среде Dynamo: код запускается через стандартный узел `Python Script`.
+Код приложения запускается через среду исполнения Dynamo путем помещения в стандартный узел `PythonScript`. 
 
 ### Возможности
 
@@ -45,7 +45,7 @@
 
 ---
 
-## 🇺🇸 English
+## EN
 
 The application runs within the Dynamo environment by executing the code in a standard `Python Script` node.
 
@@ -82,13 +82,6 @@ Configuration profiles are saved in `profiles.json` in the following directory:
 
 ---
 
-## Author / Автор
-
-**Alexander Iskra / Александр Искра**
-
-- GitHub: [alxiskra](https://github.com/alxiskra)
-
----
 
 ## Demo / Демонстрация
 
