@@ -88,6 +88,7 @@ from System.Drawing import (
 )
 from System.Drawing.Imaging import ImageFormat
 from System.Drawing.Drawing2D import SmoothingMode, InterpolationMode
+from System.Drawing.Text import TextRenderingHint
 from System.Windows.Forms import (
     Application,
     Form,
@@ -99,6 +100,11 @@ from System.Windows.Forms import (
     TextBox,
     ComboBox,
     ComboBoxStyle,
+    DrawMode,
+    DrawItemState,
+    TextRenderer,
+    TextFormatFlags,
+    AutoScaleMode,
     ListBox,
     CheckBox,
     NumericUpDown,
@@ -124,6 +130,7 @@ from System.Windows.Forms import (
     ContextMenu,
     MenuItem,
     Keys,
+    Padding,
     Timer,
 )
 
@@ -424,30 +431,106 @@ def enable_textbox_clipboard(tb):
     try:
         ctx = ContextMenu()
         if not tb.ReadOnly:
-            mi_paste = MenuItem(u"Вставить (Ctrl+V)")
+            mi_paste = MenuItem(u"Paste (Ctrl+V)")
             mi_paste.Click += lambda s, a: paste_into_textbox(tb)
             ctx.MenuItems.Add(mi_paste)
 
-            mi_cut = MenuItem(u"Вырезать (Ctrl+X)")
+            mi_cut = MenuItem(u"Cut (Ctrl+X)")
             mi_cut.Click += lambda s, a: cut_from_textbox(tb)
             ctx.MenuItems.Add(mi_cut)
 
-        mi_copy = MenuItem(u"Копировать (Ctrl+C)")
+        mi_copy = MenuItem(u"Copy (Ctrl+C)")
         mi_copy.Click += lambda s, a: copy_from_textbox(tb, copy_all_if_unselected=True)
         ctx.MenuItems.Add(mi_copy)
 
-        mi_sel_all = MenuItem(u"Выделить всё (Ctrl+A)")
+        mi_sel_all = MenuItem(u"Select All (Ctrl+A)")
         mi_sel_all.Click += lambda s, a: tb.SelectAll()
         ctx.MenuItems.Add(mi_sel_all)
 
         if not tb.ReadOnly:
-            mi_clear = MenuItem(u"Очистить поле")
+            mi_clear = MenuItem(u"Clear")
             mi_clear.Click += lambda s, a: setattr(tb, "Text", u"")
             ctx.MenuItems.Add(mi_clear)
 
         tb.ContextMenu = ctx
     except Exception:
         pass
+
+
+def paste_into_numeric_updown(num_ctrl):
+    """Вставка целого или дробного числа из буфера обмена (Ctrl+V / Shift+Insert) в NumericUpDown."""
+    if num_ctrl is None:
+        return False
+    try:
+        if not num_ctrl.Enabled:
+            return False
+    except Exception:
+        pass
+    try:
+        if Clipboard.ContainsText():
+            raw = u_str(Clipboard.GetText()).strip()
+            if raw:
+                cleaned = u""
+                for ch in raw:
+                    if ch.isdigit() or ch in (u".", u",", u"-"):
+                        cleaned += (u"." if ch == u"," else ch)
+                if cleaned:
+                    val_f = float(cleaned)
+                    min_f = from_decimal_float(num_ctrl.Minimum, 0.0)
+                    max_f = from_decimal_float(num_ctrl.Maximum, 2147483647.0)
+                    val_f = max(min_f, min(max_f, val_f))
+                    if int(num_ctrl.DecimalPlaces) == 0:
+                        num_ctrl.Value = to_decimal(int(round(val_f)))
+                    else:
+                        num_ctrl.Value = to_decimal(round(val_f, int(num_ctrl.DecimalPlaces)))
+                    return True
+    except Exception:
+        pass
+    return False
+
+
+def copy_from_numeric_updown(num_ctrl):
+    """Копирование текущего значения из NumericUpDown в буфер обмена (Ctrl+C)."""
+    if num_ctrl is None:
+        return False
+    try:
+        if int(num_ctrl.DecimalPlaces) == 0:
+            val_str = u_str(from_decimal_int(num_ctrl.Value, 0))
+        else:
+            val_str = u_str(from_decimal_float(num_ctrl.Value, 0.0))
+        if val_str:
+            Clipboard.SetText(val_str)
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def enable_numeric_clipboard(num_ctrl):
+    """Включает Ctrl+V / Shift+Insert и Ctrl+C для NumericUpDown (например, поля Seed) в Revit."""
+    if num_ctrl is None:
+        return
+
+    def _on_num_key_down(sender, e):
+        try:
+            k_code = int(e.KeyCode) & 0xFFFF
+            now_ts = time.time()
+            if (e.Control and k_code == 86) or (e.Shift and k_code == 45):
+                if (now_ts - _LAST_CLIPBOARD_SHORTCUT_TS[0]) > 0.15:
+                    _LAST_CLIPBOARD_SHORTCUT_TS[0] = now_ts
+                    paste_into_numeric_updown(sender)
+                e.SuppressKeyPress = True
+                e.Handled = True
+            elif e.Control and (k_code == 67 or k_code == 45):
+                if (now_ts - _LAST_CLIPBOARD_SHORTCUT_TS[0]) > 0.15:
+                    _LAST_CLIPBOARD_SHORTCUT_TS[0] = now_ts
+                    copy_from_numeric_updown(sender)
+                e.SuppressKeyPress = True
+                e.Handled = True
+        except Exception:
+            pass
+
+    num_ctrl.KeyDown += _on_num_key_down
 
 
 configure_network_tls()
@@ -823,38 +906,38 @@ DEFAULT_SYSTEM_PROMPT = (
 
 DEFAULT_POS_TEMPLATES = [
     {
-        "name": u"Экстерьер: Солнечный день (Фотореализм)",
+        "name": u"Exterior: Sunny Day (Photorealistic)",
         "text": u"Convert this 3D CAD view into a photorealistic architectural render, preserve exact building contours and geometry, glass and concrete facade, natural daylight, clear sky, realistic trees and environment, 8k",
     },
     {
-        "name": u"Экстерьер: Вечер / Тёплый закат",
+        "name": u"Exterior: Golden Hour / Warm Sunset",
         "text": u"Photorealistic architectural exterior render at golden hour sunset, warm interior lights glowing through windows, preserve exact 3D geometry and perspective, wet pavement reflections, atmospheric lighting",
     },
     {
-        "name": u"Экстерьер: Пасмурный день / Мягкий свет",
+        "name": u"Exterior: Overcast / Soft Diffused Light",
         "text": u"Photorealistic architectural visualization, overcast soft diffused lighting, minimalist Scandinavian facade materials, natural brick and timber, preserve exact CAD lines and proportions",
     },
     {
-        "name": u"Интерьер: Современный минимализм",
+        "name": u"Interior: Modern Minimalist",
         "text": u"Photorealistic modern interior design render, natural oak flooring, soft daylight from windows, realistic textures and furniture materials, strictly preserve room geometry and perspective",
     },
     {
-        "name": u"Зимнее окружение",
+        "name": u"Exterior: Winter Atmosphere",
         "text": u"Photorealistic winter architectural render, fresh snow on ground and trees, crisp cold morning light, warm cozy interior lighting, preserve exact building geometry",
     },
 ]
 
 DEFAULT_NEG_TEMPLATES = [
     {
-        "name": u"Базовый архитектурный (против искажений)",
+        "name": u"Architectural Standard (Anti-Distortion)",
         "text": u"low quality, blurry, distorted geometry, warped perspective, bent lines, deformed building, watermark, text, signature, oversaturated, cartoon, sketch",
     },
     {
-        "name": u"Чистая архитектура (без людей и машин)",
+        "name": u"Clean Architecture (No People or Cars)",
         "text": u"people, crowds, pedestrians, cars, vehicles, traffic signs, trash, wires, blurry, low resolution, distorted geometry, watermark",
     },
     {
-        "name": u"Интерьер без лишнего декора",
+        "name": u"Clean Interior (No Clutter)",
         "text": u"clutter, messy objects, deformed furniture, crooked walls, bad perspective, blurry textures, overexposed, dark shadows, watermark, text",
     },
 ]
@@ -879,13 +962,19 @@ def _ensure_profile_defaults(data_dict):
         data_dict = {}
     if "profiles" not in data_dict or not isinstance(data_dict["profiles"], dict) or len(data_dict["profiles"]) == 0:
         data_dict["profiles"] = {
-            u"Chutes.ai (Основной)": {
+            u"Chutes.ai": {
                 "base_url": u"https://api.chutes.ai",
                 "api_key": u"",
                 "last_model": u"Qwen-Image-Edit-2511",
                 "custom_models": [],
             }
         }
+    elif u"Chutes.ai (Основной)" in data_dict["profiles"]:
+        old_prof_val = data_dict["profiles"].pop(u"Chutes.ai (Основной)")
+        if u"Chutes.ai" not in data_dict["profiles"]:
+            data_dict["profiles"][u"Chutes.ai"] = old_prof_val
+        if data_dict.get("active_profile") == u"Chutes.ai (Основной)":
+            data_dict["active_profile"] = u"Chutes.ai"
     if "active_profile" not in data_dict or data_dict["active_profile"] not in data_dict["profiles"]:
         data_dict["active_profile"] = sorted(data_dict["profiles"].keys())[0]
 
@@ -951,7 +1040,7 @@ BUILTIN_CHUTES_IMAGE_MODELS = [
         "endpoint": u"https://vonkaiser-qwen-image-edit-2511.chutes.ai/generate",
         "mode": u"img2img_qwen",
         "owner": u"vonkaiser",
-        "description": u"Редактирование и рендер по 1..3 кадрам (image_b64s)",
+        "description": u"Image-to-Image CAD render & edit using 1..3 input scenes",
         "default_steps": 4,
         "default_guidance": 1.0,
     },
@@ -962,7 +1051,7 @@ BUILTIN_CHUTES_IMAGE_MODELS = [
         "endpoint": u"https://vonkaiser-qwen-image-2512.chutes.ai/generate",
         "mode": u"txt2img_chute",
         "owner": u"vonkaiser",
-        "description": u"Генерация изображений по текстовому промпту (Qwen-Image-2512)",
+        "description": u"Text-to-Image generation (Qwen-Image-2512)",
         "default_steps": 8,
         "default_guidance": 3.5,
     },
@@ -973,7 +1062,7 @@ BUILTIN_CHUTES_IMAGE_MODELS = [
         "endpoint": u"https://vonkaiser-z-image-turbo.chutes.ai/generate",
         "mode": u"txt2img_chute",
         "owner": u"vonkaiser",
-        "description": u"Быстрая генерация изображений Z-Image Turbo",
+        "description": u"Fast Text-to-Image generation (Z-Image Turbo)",
         "default_steps": 4,
         "default_guidance": 1.0,
     },
@@ -984,7 +1073,7 @@ BUILTIN_CHUTES_IMAGE_MODELS = [
         "endpoint": u"https://vonkaiser-imageclassic.chutes.ai/image/juggernaut",
         "mode": u"txt2img_chute",
         "owner": u"vonkaiser",
-        "description": u"Классические модели (Juggernaut XL / FLUX.1-schnell / Dreamshaper XL)",
+        "description": u"Classic diffusion pipelines (Juggernaut XL / FLUX.1-schnell / Dreamshaper XL)",
         "default_steps": 20,
         "default_guidance": 5.0,
         "sub_model": u"juggernaut",
@@ -1113,7 +1202,7 @@ def build_custom_model_entry(model_name, base_url, explicit_endpoint=u""):
         "endpoint": ep,
         "mode": mode,
         "owner": u"custom",
-        "description": u"Пользовательская модель (сохранена в профиле)",
+        "description": u"Custom model (saved in profile)",
         "default_steps": def_steps,
         "default_guidance": def_guidance,
         "is_custom": True,
@@ -1333,7 +1422,7 @@ def fetch_provider_image_models(base_url, api_key, custom_models=None, fetch_onl
             "endpoint": direct_ep,
             "mode": u"img2img_qwen" if is_edit else u"txt2img_chute",
             "owner": u"custom",
-            "description": u"Прямой адрес chute из поля Base URL.",
+            "description": u"Direct chute endpoint from Base URL",
             "default_steps": 4,
             "default_guidance": 1.0 if is_edit else 3.5,
         })
@@ -1379,7 +1468,7 @@ def fetch_provider_image_models(base_url, api_key, custom_models=None, fetch_onl
                                 "endpoint": ep,
                                 "mode": mode,
                                 "owner": u_str((item.get("user") or {}).get("username", "")) if isinstance(item.get("user"), dict) else u"",
-                                "description": tagline or u"Модель получена онлайн через API поставщика.",
+                                "description": tagline or u"Discovered online via provider API",
                                 "default_steps": def_steps,
                                 "default_guidance": def_cfg,
                                 "cords": item.get("cords") if isinstance(item.get("cords"), list) else [],
@@ -1411,7 +1500,13 @@ def fetch_provider_image_models(base_url, api_key, custom_models=None, fetch_onl
         for preset in BUILTIN_CHUTES_IMAGE_MODELS:
             add_model_entry(dict(preset))
 
-    status_summary = u", ".join(api_notes) if api_notes else u"Каталог Chutes (4)"
+    custom_cnt = sum(1 for m in discovered if m.get("owner") == u"custom" or m.get("is_custom"))
+    if fetch_online and online_matched_total > 0:
+        status_summary = u"Online API + {} Profile".format(custom_cnt) if custom_cnt > 0 else u"Online API"
+    elif fetch_online and api_notes:
+        status_summary = u"Built-in ({})".format(u", ".join(api_notes))
+    else:
+        status_summary = u"Built-in + {} Profile".format(custom_cnt) if custom_cnt > 0 else u"Built-in"
     return discovered, status_summary
 
 
@@ -1456,7 +1551,7 @@ def collect_project_views(doc, include_non_3d=False):
         is_3d = isinstance(v, View3D) or (v.ViewType == ViewType.ThreeD)
 
         if is_3d:
-            prefix = u"★ [Активный 3D] " if is_act else u"[3D] "
+            prefix = u"★ [Active 3D] " if is_act else u"[3D] "
             views_3d.append({
                 "name": v_name,
                 "label": prefix + v_name,
@@ -1465,7 +1560,7 @@ def collect_project_views(doc, include_non_3d=False):
                 "is_active": is_act,
             })
         elif include_non_3d:
-            prefix = u"★ [Активный] " if is_act else u"[Вид] "
+            prefix = u"★ [Active] " if is_act else u"[2D] "
             views_other.append({
                 "name": v_name,
                 "label": prefix + v_name,
@@ -1789,9 +1884,51 @@ def build_fallback_requests_on_error(endpoint_url, payload_dict, model_info=None
     return fallbacks
 
 
-def parse_and_save_response_bytes(raw_bytes, content_type, out_dir):
+def sanitize_filename_part(text, fallback=u"item"):
+    """Очищает часть имени файла от недопустимых символов Windows и пробелов."""
+    raw = u_str(text).strip()
+    if not raw:
+        return u_str(fallback)
+    forbidden = u'<>:"/\\|?*{}[]\r\n\t'
+    out_chars = []
+    for ch in raw:
+        if ch in forbidden or ch == u" ":
+            out_chars.append(u"_")
+        else:
+            out_chars.append(ch)
+    cleaned = u"".join(out_chars)
+    while u"__" in cleaned:
+        cleaned = cleaned.replace(u"__", u"_")
+    cleaned = cleaned.strip(u"_.")
+    return cleaned if cleaned else u_str(fallback)
+
+
+def make_date_and_day_second_stamp():
+    """
+    Возвращает штамп времени вида YYYYMMDD_SSSSS (например, 20261022_85400),
+    где SSSSS — секунда текущих суток (0..86399, в сутках 86400 секунд).
+    """
+    now_ts = time.time()
+    lt = time.localtime(now_ts)
+    date_part = u_str(time.strftime("%Y%m%d", lt))
+    sec_of_day = int(lt.tm_hour) * 3600 + int(lt.tm_min) * 60 + int(lt.tm_sec)
+    return u"{}_{:05d}".format(date_part, sec_of_day)
+
+
+def build_render_output_base_name(model_name, scene_name, seed_val):
+    """
+    Формирует имя файла по схеме:
+    <выбранная model name из вкладки II>_<имя картинки в Scene #1>_seed<номер сида>_<YYYYMMDD>_<секунда суток>
+    """
+    m_part = sanitize_filename_part(model_name, u"AI-Model")
+    s_part = sanitize_filename_part(scene_name, u"Scene1")
+    seed_part = u"seed{}".format(int(seed_val))
+    time_part = make_date_and_day_second_stamp()
+    return u"{}_{}_{}_{}".format(m_part, s_part, seed_part, time_part)
+
+
+def parse_and_save_response_bytes(raw_bytes, content_type, out_dir, base_file_name=None):
     """Сохраняет полученные байты изображения (или разбирает JSON с base64) в файл."""
-    stamp = u_str(int(time.time() * 1000))
     ct_low = u_str(content_type).lower()
 
     is_png = (u"png" in ct_low)
@@ -1804,7 +1941,11 @@ def parse_and_save_response_bytes(raw_bytes, content_type, out_dir):
         pass
 
     ext = u".png" if is_png else u".jpg"
-    result_path = Path.Combine(out_dir, u"chutes_ai_{}{}".format(stamp, ext))
+    base_clean = u_str(base_file_name).strip() if base_file_name else u"chutes_ai_{}".format(make_date_and_day_second_stamp())
+    result_path = Path.Combine(out_dir, u"{}{}".format(base_clean, ext))
+    if File.Exists(result_path):
+        ms_suffix = int((time.time() * 1000) % 1000)
+        result_path = Path.Combine(out_dir, u"{}_{:03d}{}".format(base_clean, ms_suffix, ext))
 
     is_json = (u"json" in ct_low)
     if not is_json:
@@ -1836,7 +1977,7 @@ def parse_and_save_response_bytes(raw_bytes, content_type, out_dir):
     return True, result_path
 
 
-def curl_post_generation_fallback(endpoint_url, api_key, json_body_str, out_dir, timeout_sec=240):
+def curl_post_generation_fallback(endpoint_url, api_key, json_body_str, out_dir, timeout_sec=240, base_file_name=None):
     """
     Резервная отправка POST-запроса через системный curl.exe Windows 10/11,
     если .NET HttpWebRequest в процессе Revit заблокирован прокси или Schannel TLS.
@@ -1885,7 +2026,7 @@ def curl_post_generation_fallback(endpoint_url, api_key, json_body_str, out_dir,
                 if http_code == 200 and File.Exists(temp_resp_file):
                     raw_bytes = File.ReadAllBytes(temp_resp_file)
                     if raw_bytes is not None and len(raw_bytes) > 0:
-                        ok, res_val = parse_and_save_response_bytes(raw_bytes, ct_str, out_dir)
+                        ok, res_val = parse_and_save_response_bytes(raw_bytes, ct_str, out_dir, base_file_name=base_file_name)
                         return 200, res_val
                 elif http_code > 0 and File.Exists(temp_resp_file):
                     err_text = File.ReadAllText(temp_resp_file, Encoding.UTF8)
@@ -1902,7 +2043,7 @@ def curl_post_generation_fallback(endpoint_url, api_key, json_body_str, out_dir,
     return -1, u""
 
 
-def _send_single_http_post(endpoint_url, api_key, payload_dict, out_dir, timeout_ms=240000):
+def _send_single_http_post(endpoint_url, api_key, payload_dict, out_dir, timeout_ms=240000, base_file_name=None):
     """
     Отправляет одиночный POST-запрос на указанный endpoint_url с обходом прокси и резервом через curl.exe.
     """
@@ -1943,7 +2084,7 @@ def _send_single_http_post(endpoint_url, api_key, payload_dict, out_dir, timeout
         resp_stream.Close()
         resp.Close()
 
-        ok, res_val = parse_and_save_response_bytes(raw_bytes, content_type, out_dir)
+        ok, res_val = parse_and_save_response_bytes(raw_bytes, content_type, out_dir, base_file_name=base_file_name)
         return status_code, res_val
 
     last_code = -1
@@ -1978,7 +2119,7 @@ def _send_single_http_post(endpoint_url, api_key, payload_dict, out_dir, timeout
 
     json_body_str = json.dumps(payload_dict, ensure_ascii=True)
     c_code, c_res = curl_post_generation_fallback(
-        endpoint_url, api_key, json_body_str, out_dir, timeout_sec=max(30, int(timeout_ms / 1000))
+        endpoint_url, api_key, json_body_str, out_dir, timeout_sec=max(30, int(timeout_ms / 1000)), base_file_name=base_file_name
     )
     if c_code > 0:
         return c_code, c_res
@@ -1989,7 +2130,7 @@ def _send_single_http_post(endpoint_url, api_key, payload_dict, out_dir, timeout
     )
 
 
-def send_image_generation_request(endpoint_url, api_key, payload_dict, out_dir, timeout_ms=240000, model_info=None):
+def send_image_generation_request(endpoint_url, api_key, payload_dict, out_dir, timeout_ms=240000, model_info=None, base_file_name=None):
     """
     Отправляет POST-запрос напрямую на указанный endpoint_url (без подмены пути через openapi.json,
     чтобы не возникала ошибка HTTP 404: No matching cord found!).
@@ -2004,13 +2145,13 @@ def send_image_generation_request(endpoint_url, api_key, payload_dict, out_dir, 
         if base_h:
             eff_url = base_h.rstrip(u"/") + u"/generate"
 
-    code, res = _send_single_http_post(eff_url, api_key, payload_dict, out_dir, timeout_ms=timeout_ms)
+    code, res = _send_single_http_post(eff_url, api_key, payload_dict, out_dir, timeout_ms=timeout_ms, base_file_name=base_file_name)
     if code in (400, 404, 422):
         fallbacks = build_fallback_requests_on_error(eff_url, payload_dict, model_info=model_info)
         for fb_url, fb_payload in fallbacks:
             if fb_url == eff_url and fb_payload == payload_dict:
                 continue
-            fb_code, fb_res = _send_single_http_post(fb_url, api_key, fb_payload, out_dir, timeout_ms=timeout_ms)
+            fb_code, fb_res = _send_single_http_post(fb_url, api_key, fb_payload, out_dir, timeout_ms=timeout_ms, base_file_name=base_file_name)
             if fb_code == 200:
                 return fb_code, fb_res
             if fb_code not in (400, 404, 422) and fb_code > 0:
@@ -2085,7 +2226,7 @@ def style_subdialog_controls(dlg, is_dark=False):
 def show_system_prompt_dialog(parent_form, profiles_data):
     """Модальное окно настройки Системного промпта (System Prompt)."""
     dlg = Form()
-    dlg.Text = u"Настройка Системного промпта (System Prompt)"
+    dlg.Text = u"System Prompt Settings"
     dlg.Size = Size(640, 360)
     dlg.MinimumSize = Size(520, 300)
     dlg.FormBorderStyle = FormBorderStyle.FixedDialog
@@ -2099,7 +2240,7 @@ def show_system_prompt_dialog(parent_form, profiles_data):
     font_small = Font("Segoe UI", 8.25, FontStyle.Regular)
 
     chk_enable = CheckBox()
-    chk_enable.Text = u"Включить системный промпт (автоматически добавлять к запросу генерации)"
+    chk_enable.Text = u"Enable System Prompt (automatically prepend to generation requests)"
     chk_enable.Font = font_sec
     chk_enable.ForeColor = Color.FromArgb(15, 23, 42)
     chk_enable.Location = Point(18, 16)
@@ -2108,7 +2249,7 @@ def show_system_prompt_dialog(parent_form, profiles_data):
     dlg.Controls.Add(chk_enable)
 
     lbl_hint = Label()
-    lbl_hint.Text = u"Системный промпт задаёт общие правила для нейросети (сохранение геометрии, перспективы, стиля):"
+    lbl_hint.Text = u"Defines global instructions for the AI model (preserving 3D CAD geometry, perspective, and style):"
     lbl_hint.Font = font_small
     lbl_hint.ForeColor = Color.FromArgb(100, 116, 139)
     lbl_hint.Location = Point(18, 44)
@@ -2126,7 +2267,7 @@ def show_system_prompt_dialog(parent_form, profiles_data):
     dlg.Controls.Add(txt_sys)
 
     btn_paste_sys = Button()
-    btn_paste_sys.Text = u"Вставить из буфера"
+    btn_paste_sys.Text = u"Paste Clipboard"
     btn_paste_sys.FlatStyle = FlatStyle.Flat
     btn_paste_sys.BackColor = Color.FromArgb(239, 246, 255)
     btn_paste_sys.ForeColor = Color.FromArgb(37, 99, 235)
@@ -2138,7 +2279,7 @@ def show_system_prompt_dialog(parent_form, profiles_data):
     dlg.Controls.Add(btn_paste_sys)
 
     btn_reset = Button()
-    btn_reset.Text = u"По умолчанию"
+    btn_reset.Text = u"Reset Default"
     btn_reset.FlatStyle = FlatStyle.Flat
     btn_reset.BackColor = Color.White
     btn_reset.ForeColor = Color.FromArgb(100, 116, 139)
@@ -2150,7 +2291,7 @@ def show_system_prompt_dialog(parent_form, profiles_data):
     dlg.Controls.Add(btn_reset)
 
     btn_cancel = Button()
-    btn_cancel.Text = u"Отмена"
+    btn_cancel.Text = u"Cancel"
     btn_cancel.FlatStyle = FlatStyle.Flat
     btn_cancel.BackColor = Color.White
     btn_cancel.ForeColor = Color.FromArgb(30, 41, 59)
@@ -2171,7 +2312,7 @@ def show_system_prompt_dialog(parent_form, profiles_data):
         dlg.Close()
 
     btn_save = Button()
-    btn_save.Text = u"Сохранить"
+    btn_save.Text = u"Save"
     btn_save.FlatStyle = FlatStyle.Flat
     btn_save.BackColor = Color.FromArgb(37, 99, 235)
     btn_save.ForeColor = Color.White
@@ -2199,7 +2340,7 @@ def show_prompt_templates_dialog(parent_form, profiles_data, target_textbox, is_
     templates_list = profiles_data[storage_key]
 
     dlg = Form()
-    dlg.Text = u"Шаблоны негативных промптов" if is_negative else u"Шаблоны промптов (Обычный промпт)"
+    dlg.Text = u"Negative Prompt Templates" if is_negative else u"Prompt Templates"
     dlg.Size = Size(760, 480)
     dlg.MinimumSize = Size(680, 420)
     dlg.FormBorderStyle = FormBorderStyle.FixedDialog
@@ -2213,7 +2354,7 @@ def show_prompt_templates_dialog(parent_form, profiles_data, target_textbox, is_
     font_small = Font("Segoe UI", 8.25, FontStyle.Regular)
 
     lbl_list = Label()
-    lbl_list.Text = u"Сохранённые шаблоны:"
+    lbl_list.Text = u"Saved Templates:"
     lbl_list.Font = font_sec
     lbl_list.ForeColor = Color.FromArgb(15, 23, 42)
     lbl_list.Location = Point(16, 14)
@@ -2227,7 +2368,7 @@ def show_prompt_templates_dialog(parent_form, profiles_data, target_textbox, is_
     dlg.Controls.Add(lst_tpl)
 
     lbl_name = Label()
-    lbl_name.Text = u"Название шаблона:"
+    lbl_name.Text = u"Template Name:"
     lbl_name.Font = font_sec
     lbl_name.ForeColor = Color.FromArgb(15, 23, 42)
     lbl_name.Location = Point(302, 14)
@@ -2242,7 +2383,7 @@ def show_prompt_templates_dialog(parent_form, profiles_data, target_textbox, is_
     dlg.Controls.Add(txt_name)
 
     lbl_body = Label()
-    lbl_body.Text = u"Текст шаблона:"
+    lbl_body.Text = u"Template Text:"
     lbl_body.Font = font_sec
     lbl_body.ForeColor = Color.FromArgb(15, 23, 42)
     lbl_body.Location = Point(302, 70)
@@ -2250,7 +2391,7 @@ def show_prompt_templates_dialog(parent_form, profiles_data, target_textbox, is_
     dlg.Controls.Add(lbl_body)
 
     btn_from_current = Button()
-    btn_from_current.Text = u"Взять текущий текст из поля"
+    btn_from_current.Text = u"Use Current Prompt Text"
     btn_from_current.FlatStyle = FlatStyle.Flat
     btn_from_current.BackColor = Color.FromArgb(239, 246, 255)
     btn_from_current.ForeColor = Color.FromArgb(37, 99, 235)
@@ -2270,7 +2411,7 @@ def show_prompt_templates_dialog(parent_form, profiles_data, target_textbox, is_
     dlg.Controls.Add(txt_body)
 
     btn_add_new = Button()
-    btn_add_new.Text = u"+ Сохранить как новый"
+    btn_add_new.Text = u"+ Save as New"
     btn_add_new.FlatStyle = FlatStyle.Flat
     btn_add_new.BackColor = Color.FromArgb(239, 246, 255)
     btn_add_new.ForeColor = Color.FromArgb(37, 99, 235)
@@ -2281,7 +2422,7 @@ def show_prompt_templates_dialog(parent_form, profiles_data, target_textbox, is_
     dlg.Controls.Add(btn_add_new)
 
     btn_update_sel = Button()
-    btn_update_sel.Text = u"Обновить выбранный"
+    btn_update_sel.Text = u"Update Selected"
     btn_update_sel.FlatStyle = FlatStyle.Flat
     btn_update_sel.BackColor = Color.White
     btn_update_sel.ForeColor = Color.FromArgb(30, 41, 59)
@@ -2292,7 +2433,7 @@ def show_prompt_templates_dialog(parent_form, profiles_data, target_textbox, is_
     dlg.Controls.Add(btn_update_sel)
 
     btn_del_sel = Button()
-    btn_del_sel.Text = u"✕ Удалить"
+    btn_del_sel.Text = u"✕ Delete"
     btn_del_sel.FlatStyle = FlatStyle.Flat
     btn_del_sel.BackColor = Color.White
     btn_del_sel.ForeColor = Color.FromArgb(220, 38, 38)
@@ -2303,7 +2444,7 @@ def show_prompt_templates_dialog(parent_form, profiles_data, target_textbox, is_
     dlg.Controls.Add(btn_del_sel)
 
     btn_apply_replace = Button()
-    btn_apply_replace.Text = u"Вставить (Заменить поле)"
+    btn_apply_replace.Text = u"Apply (Replace)"
     btn_apply_replace.FlatStyle = FlatStyle.Flat
     btn_apply_replace.BackColor = Color.FromArgb(16, 185, 129)
     btn_apply_replace.ForeColor = Color.White
@@ -2314,7 +2455,7 @@ def show_prompt_templates_dialog(parent_form, profiles_data, target_textbox, is_
     dlg.Controls.Add(btn_apply_replace)
 
     btn_apply_append = Button()
-    btn_apply_append.Text = u"+ Добавить к тексту"
+    btn_apply_append.Text = u"+ Append"
     btn_apply_append.FlatStyle = FlatStyle.Flat
     btn_apply_append.BackColor = Color.FromArgb(37, 99, 235)
     btn_apply_append.ForeColor = Color.White
@@ -2325,7 +2466,7 @@ def show_prompt_templates_dialog(parent_form, profiles_data, target_textbox, is_
     dlg.Controls.Add(btn_apply_append)
 
     btn_close = Button()
-    btn_close.Text = u"Закрыть"
+    btn_close.Text = u"Close"
     btn_close.FlatStyle = FlatStyle.Flat
     btn_close.BackColor = Color.White
     btn_close.ForeColor = Color.FromArgb(30, 41, 59)
@@ -2339,7 +2480,7 @@ def show_prompt_templates_dialog(parent_form, profiles_data, target_textbox, is_
     def _refresh_list(select_idx=0):
         lst_tpl.Items.Clear()
         for t in templates_list:
-            lst_tpl.Items.Add(u_str(t.get("name", u"Шаблон")))
+            lst_tpl.Items.Add(u_str(t.get("name", u"Template")))
         if lst_tpl.Items.Count > 0:
             idx = max(0, min(lst_tpl.Items.Count - 1, int(select_idx)))
             lst_tpl.SelectedIndex = idx
@@ -2358,12 +2499,12 @@ def show_prompt_templates_dialog(parent_form, profiles_data, target_textbox, is_
         if curr:
             txt_body.Text = curr
             if not u_str(txt_name.Text).strip():
-                txt_name.Text = u"Мой шаблон {}".format(len(templates_list) + 1)
+                txt_name.Text = u"Custom Template {}".format(len(templates_list) + 1)
 
     btn_from_current.Click += _on_grab_current
 
     def _on_add_new(s, a):
-        name_val = u_str(txt_name.Text).strip() or u"Шаблон {}".format(len(templates_list) + 1)
+        name_val = u_str(txt_name.Text).strip() or u"Template {}".format(len(templates_list) + 1)
         body_val = u_str(txt_body.Text).strip()
         if not body_val:
             return
@@ -2379,7 +2520,7 @@ def show_prompt_templates_dialog(parent_form, profiles_data, target_textbox, is_
         body_val = u_str(txt_body.Text).strip()
         if 0 <= idx < len(templates_list) and body_val:
             templates_list[idx] = {
-                "name": name_val or u_str(templates_list[idx].get("name", u"Шаблон")),
+                "name": name_val or u_str(templates_list[idx].get("name", u"Template")),
                 "text": body_val,
             }
             save_profiles_data(profiles_data)
@@ -2467,7 +2608,7 @@ def show_full_image_window(image_path, title_text, live_bitmap=None):
     viewer.Controls.Add(pnl_bottom)
 
     lbl_info = Label()
-    lbl_info.Text = u"Разрешение: {}   |   Файл: {}".format(dims_str, u_str(image_path or fname_str))
+    lbl_info.Text = u"Resolution: {}   |   File: {}".format(dims_str, u_str(image_path or fname_str))
     lbl_info.ForeColor = Color.FromArgb(226, 232, 240)
     lbl_info.Font = Font("Segoe UI", 9.0, FontStyle.Regular)
     lbl_info.Location = Point(16, 10)
@@ -2475,7 +2616,7 @@ def show_full_image_window(image_path, title_text, live_bitmap=None):
     pnl_bottom.Controls.Add(lbl_info)
 
     btn_close = Button()
-    btn_close.Text = u"EXIT | ЗАКРЫТЬ"
+    btn_close.Text = u"CLOSE"
     btn_close.FlatStyle = FlatStyle.Flat
     btn_close.BackColor = Color.FromArgb(220, 38, 38)
     btn_close.ForeColor = Color.White
@@ -2541,20 +2682,20 @@ def show_comparison_window(input_items, res_path, view_label, prompt_text, model
                 if f_path and File.Exists(u_str(f_path)):
                     valid_inputs.append([u_str(t_lbl), u_str(f_path)])
     elif isinstance(input_items, STRING_TYPES) and File.Exists(u_str(input_items)):
-        valid_inputs.append([u"Кадр 1 (Исходный)", u_str(input_items)])
+        valid_inputs.append([u"Scene #1 (Source)", u_str(input_items)])
 
     has_result = bool(res_path and File.Exists(u_str(res_path)))
     if len(valid_inputs) == 0 and not has_result:
         return
 
     if len(valid_inputs) == 0 and has_result:
-        valid_inputs.append([u"Результат AI", u_str(res_path)])
+        valid_inputs.append([u"AI Render", u_str(res_path)])
 
     after_path = u_str(res_path) if has_result else valid_inputs[-1][1]
-    after_label = u"Результат AI ({})".format(u_str(model_title)) if has_result else valid_inputs[-1][0]
+    after_label = u"AI Render ({})".format(u_str(model_title)) if has_result else valid_inputs[-1][0]
 
     form = Form()
-    form.Text = u"Сравнение До / После (Шторка) — {}  |  {}".format(u_str(view_label), u_str(model_title))
+    form.Text = u"Before / After Comparison — {}  |  {}".format(u_str(view_label), u_str(model_title))
     form.Size = Size(1240, 840)
     form.MinimumSize = Size(880, 620)
     form.FormBorderStyle = FormBorderStyle.Sizable
@@ -2575,7 +2716,7 @@ def show_comparison_window(input_items, res_path, view_label, prompt_text, model
     form.Controls.Add(pnl_top)
 
     lbl_sel = Label()
-    lbl_sel.Text = u"Кадр «ДО» (слева):"
+    lbl_sel.Text = u"Before (Left):"
     lbl_sel.ForeColor = Color.FromArgb(226, 232, 240)
     lbl_sel.Font = font_bold
     lbl_sel.Location = Point(16, 15)
@@ -2594,7 +2735,7 @@ def show_comparison_window(input_items, res_path, view_label, prompt_text, model
     pnl_top.Controls.Add(cmb_input)
 
     btn_add_file = Button()
-    btn_add_file.Text = u"Другой файл..."
+    btn_add_file.Text = u"Load File..."
     btn_add_file.FlatStyle = FlatStyle.Flat
     btn_add_file.FlatAppearance.BorderColor = Color.FromArgb(71, 85, 105)
     btn_add_file.BackColor = Color.FromArgb(51, 65, 85)
@@ -2614,7 +2755,7 @@ def show_comparison_window(input_items, res_path, view_label, prompt_text, model
     pnl_top.Controls.Add(lbl_vs)
 
     btn_full_before = Button()
-    btn_full_before.Text = u"Открыть ДО"
+    btn_full_before.Text = u"Open Before"
     btn_full_before.FlatStyle = FlatStyle.Flat
     btn_full_before.FlatAppearance.BorderColor = Color.FromArgb(71, 85, 105)
     btn_full_before.BackColor = Color.FromArgb(30, 41, 59)
@@ -2625,7 +2766,7 @@ def show_comparison_window(input_items, res_path, view_label, prompt_text, model
     pnl_top.Controls.Add(btn_full_before)
 
     btn_full_after = Button()
-    btn_full_after.Text = u"Открыть ПОСЛЕ"
+    btn_full_after.Text = u"Open After"
     btn_full_after.FlatStyle = FlatStyle.Flat
     btn_full_after.FlatAppearance.BorderColor = Color.FromArgb(16, 185, 129)
     btn_full_after.BackColor = Color.FromArgb(5, 150, 105)
@@ -2648,7 +2789,7 @@ def show_comparison_window(input_items, res_path, view_label, prompt_text, model
     form.Controls.Add(pnl_bottom)
 
     btn_only_after = Button()
-    btn_only_after.Text = u"◀ СТАЛО"
+    btn_only_after.Text = u"◀ AFTER ONLY"
     btn_only_after.FlatStyle = FlatStyle.Flat
     btn_only_after.FlatAppearance.BorderColor = Color.FromArgb(71, 85, 105)
     btn_only_after.BackColor = Color.FromArgb(51, 65, 85)
@@ -2672,7 +2813,7 @@ def show_comparison_window(input_items, res_path, view_label, prompt_text, model
     pnl_bottom.Controls.Add(btn_center_split)
 
     btn_only_before = Button()
-    btn_only_before.Text = u"БЫЛО ▶"
+    btn_only_before.Text = u"BEFORE ONLY ▶"
     btn_only_before.FlatStyle = FlatStyle.Flat
     btn_only_before.FlatAppearance.BorderColor = Color.FromArgb(71, 85, 105)
     btn_only_before.BackColor = Color.FromArgb(51, 65, 85)
@@ -2704,7 +2845,7 @@ def show_comparison_window(input_items, res_path, view_label, prompt_text, model
     pnl_bottom.Controls.Add(slider)
 
     lbl_prompt = Label()
-    lbl_prompt.Text = u"Промпт: " + u_str(prompt_text)
+    lbl_prompt.Text = u"Prompt: " + u_str(prompt_text)
     lbl_prompt.ForeColor = Color.FromArgb(203, 213, 225)
     lbl_prompt.Font = font_small
     lbl_prompt.Location = Point(16, 42)
@@ -2712,7 +2853,7 @@ def show_comparison_window(input_items, res_path, view_label, prompt_text, model
     pnl_bottom.Controls.Add(lbl_prompt)
 
     btn_close = Button()
-    btn_close.Text = u"EXIT | ВЫХОД"
+    btn_close.Text = u"CLOSE"
     btn_close.FlatStyle = FlatStyle.Flat
     btn_close.BackColor = Color.FromArgb(220, 38, 38)
     btn_close.ForeColor = Color.White
@@ -2809,6 +2950,7 @@ def show_comparison_window(input_items, res_path, view_label, prompt_text, model
         try:
             try:
                 g.SmoothingMode = SmoothingMode.AntiAlias
+                g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit
             except Exception:
                 pass
 
@@ -2854,7 +2996,7 @@ def show_comparison_window(input_items, res_path, view_label, prompt_text, model
             br_white = SolidBrush(Color.White)
 
             if split_px > 95:
-                lbl_left_text = u"ДО: " + state["before_title"]
+                lbl_left_text = u"BEFORE: " + state["before_title"]
                 if len(lbl_left_text) > 34:
                     lbl_left_text = lbl_left_text[:31] + u"..."
                 badge_w = min(split_px - 16, max(110, len(lbl_left_text) * 7 + 18))
@@ -2862,7 +3004,7 @@ def show_comparison_window(input_items, res_path, view_label, prompt_text, model
                 g.DrawString(lbl_left_text, font_badge, br_white, float(dx + 16), float(dy + 14))
 
             if (dw - split_px) > 95:
-                lbl_right_text = u"ПОСЛЕ: AI Render"
+                lbl_right_text = u"AFTER: AI Render"
                 badge_rw = 142
                 rx = dx + dw - badge_rw - 10
                 if rx > line_x + 8:
@@ -2876,7 +3018,7 @@ def show_comparison_window(input_items, res_path, view_label, prompt_text, model
             g.Dispose()
 
         pct = int(round(ratio * 100))
-        lbl_slider_val.Text = u"{}% ДО  |  {}% ПОСЛЕ".format(pct, 100 - pct)
+        lbl_slider_val.Text = u"{}% BEFORE  |  {}% AFTER".format(pct, 100 - pct)
         pic_canvas.Invalidate()
 
     def _set_split_ratio(new_ratio, sync_trackbar=True):
@@ -2947,8 +3089,8 @@ def show_comparison_window(input_items, res_path, view_label, prompt_text, model
 
     def _on_pick_custom_compare_file(sender, args):
         dlg = OpenFileDialog()
-        dlg.Title = u"Выберите изображение «ДО» для сравнения с результатом AI"
-        dlg.Filter = u"Изображения (*.png;*.jpg;*.jpeg;*.bmp;*.webp)|*.png;*.jpg;*.jpeg;*.bmp;*.webp|Все файлы (*.*)|*.*"
+        dlg.Title = u"Select Before Image for Comparison"
+        dlg.Filter = u"Images (*.png;*.jpg;*.jpeg;*.bmp;*.webp)|*.png;*.jpg;*.jpeg;*.bmp;*.webp|All Files (*.*)|*.*"
         if state["before_path"] and File.Exists(state["before_path"]):
             try:
                 dlg.InitialDirectory = Path.GetDirectoryName(state["before_path"])
@@ -2956,7 +3098,7 @@ def show_comparison_window(input_items, res_path, view_label, prompt_text, model
                 pass
         if dlg.ShowDialog() == DialogResult.OK:
             f_path = u_str(dlg.FileName)
-            f_label = u"Файл: " + Path.GetFileName(f_path)
+            f_label = u"File: " + Path.GetFileName(f_path)
             valid_inputs.append([f_label, f_path])
             cmb_input.Items.Add(f_label)
             cmb_input.SelectedIndex = cmb_input.Items.Count - 1
@@ -2964,10 +3106,10 @@ def show_comparison_window(input_items, res_path, view_label, prompt_text, model
     btn_add_file.Click += _on_pick_custom_compare_file
 
     btn_full_before.Click += lambda s, a: show_full_image_window(
-        state["before_path"], u"ДО: " + state["before_title"], state["before_orig"]
+        state["before_path"], u"BEFORE: " + state["before_title"], state["before_orig"]
     )
     btn_full_after.Click += lambda s, a: show_full_image_window(
-        after_path, u"ПОСЛЕ: " + after_label, state["after_orig"]
+        after_path, u"AFTER: " + after_label, state["after_orig"]
     )
 
     def _layout_cmp(s=None, a=None):
@@ -3027,7 +3169,7 @@ def show_comparison_window(input_items, res_path, view_label, prompt_text, model
 # 8. ГЛАВНОЕ ОКНО СТУДИИ (v3.8 — НАСТРОЙКИ ПРОМПТОВ, ТЕМ И ПОДСКАЗОК КАК В REVIT)
 # ==============================================================================
 
-NONE_VIEW_LABEL = u"Выберите вид модели или укажите внешний путь"
+NONE_VIEW_LABEL = u"Select a model view or attach an external file"
 
 # Задержки всплывающих подсказок как в интерфейсе Autodesk Revit (в миллисекундах)
 REVIT_TOOLTIP_INITIAL_DELAY_MS = 700    # Время удержания курсора при наведении до появления подсказки (~0.7 сек)
@@ -3044,6 +3186,13 @@ PROMPT_COLOR_LIGHT = Color.FromArgb(4, 120, 87)        # Изумрудный д
 PROMPT_COLOR_DARK = Color.FromArgb(16, 185, 129)       # Изумрудный для ночной темы (#10B981)
 NEG_PROMPT_COLOR_LIGHT = Color.FromArgb(185, 28, 28)   # Рубиново-красный для дневной темы (#B91C1C)
 NEG_PROMPT_COLOR_DARK = Color.FromArgb(229, 72, 77)    # Карминно-красный для ночной темы (#E5484D)
+
+# Единый цвет заливки шапки «AI RENDER STUDIO» и акцентных графитовых кнопок («Подключить модели...», «EXIT | ВЫХОД»)
+# Вдохновлено Google Material 3 / Autodesk HIG / стальным графитом (между RAL 9007 и Google Slate):
+GRAPHITE_BTN_LIGHT = Color.FromArgb(71, 85, 105)       # Стальной графит для дневной темы (#475569)
+GRAPHITE_BTN_DARK = Color.FromArgb(51, 65, 85)         # Благородный графит для ночной темы (#334155)
+HEADER_BG_LIGHT = GRAPHITE_BTN_LIGHT                   # Цвет шапки в дневной теме = цвету кнопки подключения моделей
+HEADER_BG_DARK = GRAPHITE_BTN_DARK                     # Цвет шапки в ночной теме = цвету кнопки подключения моделей
 
 
 class ChutesRevitStudioForm(Form):
@@ -3073,7 +3222,7 @@ class ChutesRevitStudioForm(Form):
         self.slots = [
             {
                 "index": 0,
-                "title": u"Кадр 1 (Основной)",
+                "title": u"Scene #1 (Primary)",
                 "enabled": False,
                 "source_type": "none",
                 "view_id": -1,
@@ -3084,7 +3233,7 @@ class ChutesRevitStudioForm(Form):
             },
             {
                 "index": 1,
-                "title": u"Кадр 2 (Дополнительный)",
+                "title": u"Scene #2 (Optional)",
                 "enabled": False,
                 "source_type": "none",
                 "view_id": -1,
@@ -3095,7 +3244,7 @@ class ChutesRevitStudioForm(Form):
             },
             {
                 "index": 2,
-                "title": u"Кадр 3 (Дополнительный)",
+                "title": u"Scene #3 (Optional)",
                 "enabled": False,
                 "source_type": "none",
                 "view_id": -1,
@@ -3108,7 +3257,7 @@ class ChutesRevitStudioForm(Form):
 
         self.source_image_path = u""
         self.result_image_path = u""
-        self.status_message = u"Окно студии v3.8 открыто."
+        self.status_message = u"Studio v3.8 ready"
         self.meta_result = {}
         self.execution_succeeded = False
 
@@ -3179,9 +3328,13 @@ class ChutesRevitStudioForm(Form):
 
     def _set_palette_colors(self, is_dark):
         self.is_dark_mode = bool(is_dark)
-        self.col_dark = Color.FromArgb(15, 23, 42)
+        self.col_dark = Color.FromArgb(30, 41, 59)
+        self.col_header_bg = HEADER_BG_DARK if is_dark else HEADER_BG_LIGHT
         self.col_emerald = Color.FromArgb(16, 185, 129)
         self.col_emerald_dark = Color.FromArgb(5, 150, 105)
+        self.col_emerald_soft_bg = Color.FromArgb(6, 78, 59) if is_dark else Color.FromArgb(209, 250, 229)
+        self.col_emerald_soft_fg = Color.FromArgb(52, 211, 153) if is_dark else Color.FromArgb(4, 120, 87)
+        self.col_emerald_soft_brd = Color.FromArgb(16, 185, 129) if is_dark else Color.FromArgb(110, 231, 183)
         self.col_success = Color.FromArgb(34, 197, 94) if is_dark else Color.FromArgb(22, 163, 74)
         self.col_prompt_fg = PROMPT_COLOR_DARK if is_dark else PROMPT_COLOR_LIGHT
         self.col_neg_prompt_fg = NEG_PROMPT_COLOR_DARK if is_dark else NEG_PROMPT_COLOR_LIGHT
@@ -3196,7 +3349,7 @@ class ChutesRevitStudioForm(Form):
             self.col_border = Color.FromArgb(56, 68, 89)
             self.col_accent = Color.FromArgb(96, 165, 250)
             self.col_accent_soft = Color.FromArgb(30, 58, 95)
-            self.col_btn_dark = Color.FromArgb(51, 65, 85)
+            self.col_btn_dark = GRAPHITE_BTN_DARK
             self.col_slot_active = Color.FromArgb(25, 32, 44)
             self.col_slot_inactive = Color.FromArgb(19, 24, 34)
         else:
@@ -3204,13 +3357,13 @@ class ChutesRevitStudioForm(Form):
             self.col_card = Color.FromArgb(255, 255, 255)
             self.col_input_bg = Color.FromArgb(255, 255, 255)
             self.col_log_bg = Color.FromArgb(248, 250, 252)
-            self.col_sec_hdr = Color.FromArgb(15, 23, 42)
+            self.col_sec_hdr = Color.FromArgb(30, 41, 59)
             self.col_text = Color.FromArgb(30, 41, 59)
             self.col_muted = Color.FromArgb(100, 116, 139)
             self.col_border = Color.FromArgb(226, 232, 240)
             self.col_accent = Color.FromArgb(37, 99, 235)
             self.col_accent_soft = Color.FromArgb(239, 246, 255)
-            self.col_btn_dark = Color.FromArgb(15, 23, 42)
+            self.col_btn_dark = GRAPHITE_BTN_LIGHT
             self.col_slot_active = Color.FromArgb(241, 245, 249)
             self.col_slot_inactive = Color.FromArgb(226, 232, 240)
 
@@ -3221,19 +3374,21 @@ class ChutesRevitStudioForm(Form):
         if role == u"accent_soft":
             bg, fg = self.col_accent_soft, self.col_accent
             brd = self.col_border if self.is_dark_mode else self.col_accent_soft
+        elif role == u"emerald_soft":
+            bg, fg, brd = self.col_emerald_soft_bg, self.col_emerald_soft_fg, self.col_emerald_soft_brd
         elif role == u"emerald":
             bg, fg, brd = self.col_emerald, Color.White, self.col_emerald_dark
         elif role == u"primary_dark":
             bg, fg = self.col_btn_dark, Color.White
-            brd = self.col_border if self.is_dark_mode else self.col_btn_dark
+            brd = Color.FromArgb(82, 98, 122) if self.is_dark_mode else Color.FromArgb(51, 65, 85)
         elif role == u"surface_accent":
             bg, fg, brd = self.col_card, self.col_accent, self.col_border
         elif role == u"surface_muted":
             bg, fg, brd = self.col_card, self.col_muted, self.col_border
         elif role == u"header_theme":
-            bg = Color.FromArgb(51, 65, 85) if self.is_dark_mode else Color.FromArgb(30, 41, 59)
-            fg = Color.FromArgb(226, 232, 240)
-            brd = Color.FromArgb(71, 85, 105)
+            bg = Color.FromArgb(38, 49, 66) if self.is_dark_mode else Color.FromArgb(55, 68, 87)
+            fg = Color.FromArgb(241, 245, 249)
+            brd = Color.FromArgb(120, 136, 159)
         else:
             bg, fg, brd = self.col_card, self.col_text, self.col_border
         btn.ForeColor = fg
@@ -3257,6 +3412,12 @@ class ChutesRevitStudioForm(Form):
         btn.FlatAppearance.BorderSize = 1
         btn.Font = self.font_sec if bold else self.font_reg
         btn.Cursor = Cursors.Hand
+        try:
+            btn.Padding = Padding(0)
+            btn.UseMnemonic = False
+            btn.UseCompatibleTextRendering = False
+        except Exception:
+            pass
         if role is None:
             if bg_color == self.col_accent_soft:
                 role = u"accent_soft"
@@ -3416,7 +3577,7 @@ class ChutesRevitStudioForm(Form):
         self.pnl_header = Panel()
         self.pnl_header.Location = Point(0, 0)
         self.pnl_header.Size = Size(1280, 48)
-        self.pnl_header.BackColor = self.col_dark
+        self.pnl_header.BackColor = self.col_header_bg
         self.Controls.Add(self.pnl_header)
 
         self.lbl_app_title = Label()
@@ -3433,7 +3594,7 @@ class ChutesRevitStudioForm(Form):
         self.lbl_app_sub.Location = Point(540, 14)
         self.lbl_app_sub.Size = Size(580, 20)
         self.lbl_app_sub.Font = self.font_reg
-        self.lbl_app_sub.ForeColor = Color.FromArgb(148, 163, 184)
+        self.lbl_app_sub.ForeColor = Color.FromArgb(203, 213, 225)
         self.lbl_app_sub.TextAlign = ContentAlignment.MiddleRight
         self.pnl_header.Controls.Add(self.lbl_app_sub)
 
@@ -3452,7 +3613,7 @@ class ChutesRevitStudioForm(Form):
         self.btn_theme_toggle.Click += self._on_toggle_theme
         self.tooltip.SetToolTip(
             self.btn_theme_toggle,
-            u"Переключить цветовую тему окна: Светлая (Light) / Тёмная (Dark).\nРаботает одинаково в Revit 2020 и Revit 2022+ и автоматически сохраняется в профиле.",
+            u"Переключение дневной (Light) и ночной (Dark) темы интерфейса (сохраняется в профиле)",
         )
 
         # ======================================================================
@@ -3461,7 +3622,7 @@ class ChutesRevitStudioForm(Form):
         self.card_conn = self._create_card(16, 60, 580, 202)
 
         self.lbl_sec1 = Label()
-        self.lbl_sec1.Text = u"1. ПОДКЛЮЧЕНИЕ И ПРОФИЛЬ ПОСТАВЩИКА"
+        self.lbl_sec1.Text = u"I. AI MODEL PROVIDER"
         self.lbl_sec1.Location = Point(14, 10)
         self.lbl_sec1.Size = Size(540, 20)
         self.lbl_sec1.Font = self.font_sec
@@ -3469,7 +3630,7 @@ class ChutesRevitStudioForm(Form):
         self.card_conn.Controls.Add(self.lbl_sec1)
 
         lbl_prof = Label()
-        lbl_prof.Text = u"Профиль:"
+        lbl_prof.Text = u"Profile:"
         lbl_prof.Location = Point(14, 38)
         lbl_prof.Size = Size(70, 22)
         lbl_prof.Font = self.font_reg
@@ -3480,6 +3641,7 @@ class ChutesRevitStudioForm(Form):
         self.cmb_profile.Location = Point(90, 35)
         self.cmb_profile.Size = Size(265, 24)
         self.cmb_profile.Font = self.font_reg
+        self.cmb_profile.FlatStyle = FlatStyle.Popup if self.is_dark_mode else FlatStyle.Standard
         self.cmb_profile.DropDownStyle = ComboBoxStyle.DropDown
         self.cmb_profile.SelectedIndexChanged += self._on_profile_selected
         self.card_conn.Controls.Add(self.cmb_profile)
@@ -3490,7 +3652,7 @@ class ChutesRevitStudioForm(Form):
         self.btn_save_prof.Click += self._on_save_profile
         self.tooltip.SetToolTip(
             self.btn_save_prof,
-            u"Сохранить текущий профиль (Base URL, API Key и список добавленных моделей) в файл настроек.",
+            u"Сохранить настройки текущего профиля (Base URL, API Key и свои модели)",
         )
 
         self.btn_del_prof = self._create_button(
@@ -3499,7 +3661,7 @@ class ChutesRevitStudioForm(Form):
         self.btn_del_prof.Click += self._on_delete_profile
         self.tooltip.SetToolTip(
             self.btn_del_prof,
-            u"Удалить выбранный профиль из списка сохранённых профилей.",
+            u"Удалить выбранный профиль из списка сохранённых профилей",
         )
 
         lbl_url = Label()
@@ -3533,14 +3695,14 @@ class ChutesRevitStudioForm(Form):
         self.card_conn.Controls.Add(self.txt_api_key)
 
         self.btn_toggle_key = self._create_button(
-            self.card_conn, u"Показать", 470, 103, 74, 25, self.col_card, self.col_muted
+            self.card_conn, u"Show", 470, 103, 74, 25, self.col_card, self.col_muted
         )
         self.btn_toggle_key.Font = self.font_small
         self.btn_toggle_key.Click += self._on_toggle_api_key
 
         self.btn_fetch_models = self._create_button(
             self.card_conn,
-            u"Подключить / обновить модели от провайдера —>",
+            u"Connect / Refresh Provider Models —>",
             14,
             139,
             530,
@@ -3552,7 +3714,7 @@ class ChutesRevitStudioForm(Form):
         self.btn_fetch_models.Click += self._on_fetch_models_click
 
         self.lbl_prof_path = Label()
-        self.lbl_prof_path.Text = u"Профили: " + get_profiles_file_path()
+        self.lbl_prof_path.Text = u"Profiles: " + get_profiles_file_path()
         self.lbl_prof_path.Location = Point(14, 178)
         self.lbl_prof_path.Size = Size(530, 16)
         self.lbl_prof_path.Font = self.font_small
@@ -3565,7 +3727,7 @@ class ChutesRevitStudioForm(Form):
         self.card_models = self._create_card(610, 60, 636, 202)
 
         self.lbl_sec2 = Label()
-        self.lbl_sec2.Text = u"2. ДОСТУПНЫЕ И ПОЛЬЗОВАТЕЛЬСКИЕ МОДЕЛИ"
+        self.lbl_sec2.Text = u"II. AI MODEL"
         self.lbl_sec2.Location = Point(14, 8)
         self.lbl_sec2.Size = Size(420, 20)
         self.lbl_sec2.Font = self.font_sec
@@ -3573,7 +3735,7 @@ class ChutesRevitStudioForm(Form):
         self.card_models.Controls.Add(self.lbl_sec2)
 
         self.lbl_models_status = Label()
-        self.lbl_models_status.Text = u"Готово"
+        self.lbl_models_status.Text = u"Ready"
         self.lbl_models_status.Location = Point(440, 9)
         self.lbl_models_status.Size = Size(180, 18)
         self.lbl_models_status.Font = self.font_small
@@ -3607,31 +3769,31 @@ class ChutesRevitStudioForm(Form):
             self.lbl_custom_m,
             [self.txt_custom_model],
             (
-                u"Add Model (Добавление своей модели в профиль):\n"
-                u"• Позволяет вручную добавить любую модель с Chutes.ai или стороннего API.\n"
-                u"• Введите название/slug модели (например, flux-1-dev) и нажмите «+ В профиль».\n"
-                u"• Модель сохранится в вашем профиле и появится в списке со звёздочкой ★."
+                u"Add Model (Своя модель в профиль)\n"
+                u"Позволяет добавить любую модель Chutes.ai или внешнего провайдера\n"
+                u"› Введите имя или slug модели и нажмите + To Profile\n"
+                u"› Сохранённые модели отображаются в списке со значком ★"
             ),
         )
 
         self.btn_add_model = self._create_button(
-            self.card_models, u"+ В профиль", 424, 114, 102, 24, self.col_accent_soft, self.col_accent
+            self.card_models, u"+ To Profile", 424, 114, 102, 24, self.col_accent_soft, self.col_accent
         )
         self.btn_add_model.Font = self.font_small_bold
         self.btn_add_model.Click += self._on_add_custom_model_click
         self.tooltip.SetToolTip(
             self.btn_add_model,
-            u"Сохранить указанную в поле «Add Model» модель в активный профиль.",
+            u"Сохранить модель из поля Add Model в текущий профиль",
         )
 
         self.btn_del_model = self._create_button(
-            self.card_models, u"Убрать", 532, 114, 88, 24, self.col_card, self.col_muted
+            self.card_models, u"Remove", 532, 114, 88, 24, self.col_card, self.col_muted
         )
         self.btn_del_model.Font = self.font_small
         self.btn_del_model.Click += self._on_remove_custom_model_click
         self.tooltip.SetToolTip(
             self.btn_del_model,
-            u"Удалить выбранную пользовательскую модель (★) из активного профиля.",
+            u"Удалить выбранную пользовательскую модель (★) из текущего профиля",
         )
 
         self.lbl_ep = Label()
@@ -3653,15 +3815,15 @@ class ChutesRevitStudioForm(Form):
             self.lbl_ep,
             [self.txt_endpoint],
             (
-                u"Endpoint (Прямой URL-адрес API выбранной модели):\n"
-                u"• Полный сетевой адрес (URL), на который студия отправляет запрос генерации.\n"
-                u"• Подставляется автоматически при выборе модели в списке выше.\n"
-                u"• При подключении нестандартного сервера или своего chute можно изменить вручную."
+                u"Endpoint (Прямой URL генерации API)\n"
+                u"Адрес, на который студия отправляет запрос генерации изображения\n"
+                u"› Подставляется автоматически при выборе модели в списке выше\n"
+                u"› Можно изменить вручную для своего chute или локального сервера"
             ),
         )
 
         self.chk_send_image = CheckBox()
-        self.chk_send_image.Text = u"Отправлять входные кадры (1..3) в image_b64s"
+        self.chk_send_image.Text = u"Send Scene Images [Base64]"
         self.chk_send_image.Location = Point(14, 171)
         self.chk_send_image.Size = Size(310, 22)
         self.chk_send_image.Font = self.font_small
@@ -3670,19 +3832,16 @@ class ChutesRevitStudioForm(Form):
         self.tooltip.SetToolTip(
             self.chk_send_image,
             (
-                u"Отправлять входные кадры (1..3) в image_b64s (Режим редактирования / Img2Img):\n"
-                u"• ВКЛЮЧЕНО: студия экспортирует отмеченные галочками кадры (Кадр 1..3) из Revit/файлов\n"
-                u"  и отправляет их в нейросеть как исходную геометрию и референс.\n"
-                u"  Обязательно включайте для модели Qwen-Image-Edit-2511!\n"
-                u"• ВЫКЛЮЧЕНО: кадры из Revit не отправляются, нейросеть генерирует изображение с нуля\n"
-                u"  только по текстовому описанию Prompt (режим Text-to-Image для Qwen-Image-2512, z-image-turbo, imageclassic).\n"
-                u"• Переключается автоматически при выборе модели в списке выше."
+                u"Send Scene Images [Base64] (Передача входных кадров в поле image_b64s)\n"
+                u"Кодирует активные виды и файлы из Scene #1..#3 в Base64 и передаёт их модели\n"
+                u"› Включено: для моделей редактирования по кадру (Qwen-Image-Edit-2511)\n"
+                u"› Выключено: генерация только по тексту промпта (Qwen-Image-2512, z-image-turbo, imageclassic)"
             ),
         )
         self.card_models.Controls.Add(self.chk_send_image)
 
         self.chk_retry_busy = CheckBox()
-        self.chk_retry_busy.Text = u"Авто-дозвон если GPU занят (HTTP 500, до 4 раз)"
+        self.chk_retry_busy.Text = u"AutoReconnect [x4]"
         self.chk_retry_busy.Location = Point(330, 171)
         self.chk_retry_busy.Size = Size(292, 22)
         self.chk_retry_busy.Font = self.font_small
@@ -3690,7 +3849,7 @@ class ChutesRevitStudioForm(Form):
         self.chk_retry_busy.Checked = True
         self.tooltip.SetToolTip(
             self.chk_retry_busy,
-            u"Если единственный GPU-воркер модели на Chutes.ai в эту секунду занят чужим запросом (HTTP 500: No infrastructure available), студия подождёт 2.5 сек. и автоматически повторит запрос (до 4 попыток).",
+            u"При ошибке занятого сервера (HTTP 500: No infrastructure available) автоматически повторяет запрос до 4 раз с паузой 2.5 сек",
         )
         self.card_models.Controls.Add(self.chk_retry_busy)
 
@@ -3700,53 +3859,54 @@ class ChutesRevitStudioForm(Form):
         self.card_view = self._create_card(16, 272, 580, 470)
 
         self.lbl_sec3 = Label()
-        self.lbl_sec3.Text = u"3. ИСТОЧНИКИ КАДРОВ, ПРОМПТЫ И ПАРАМЕТРЫ"
+        self.lbl_sec3.Text = u"III. MODEL INPUTS"
         self.lbl_sec3.Location = Point(14, 8)
         self.lbl_sec3.Size = Size(540, 20)
         self.lbl_sec3.Font = self.font_sec
         self.lbl_sec3.ForeColor = self.col_dark
         self.card_view.Controls.Add(self.lbl_sec3)
 
-        lbl_search_v = Label()
-        lbl_search_v.Text = u"Поиск вида:"
-        lbl_search_v.Location = Point(14, 34)
-        lbl_search_v.Size = Size(78, 22)
-        lbl_search_v.Font = self.font_reg
-        lbl_search_v.ForeColor = self.col_muted
-        self.card_view.Controls.Add(lbl_search_v)
+        self.lbl_search_v = Label()
+        self.lbl_search_v.Text = u"Search:"
+        self.lbl_search_v.Location = Point(14, 35)
+        self.lbl_search_v.Size = Size(76, 20)
+        self.lbl_search_v.Font = self.font_small_bold
+        self.lbl_search_v.ForeColor = self.col_muted
+        self.card_view.Controls.Add(self.lbl_search_v)
 
         self.txt_view_search = TextBox()
         self.txt_view_search.Location = Point(94, 32)
-        self.txt_view_search.Size = Size(220, 24)
+        self.txt_view_search.Size = Size(298, 24)
         self.txt_view_search.Font = self.font_reg
         self.txt_view_search.TextChanged += self._on_view_search_changed
         self.tooltip.SetToolTip(
             self.txt_view_search,
-            u"Начните вводить название вида — списки видов во всех 3 слотах ниже отфильтруются",
+            u"Введите часть названия вида для быстрого фильтра списков Scene #1..#3",
         )
         self.card_view.Controls.Add(self.txt_view_search)
 
         self.btn_clear_search = self._create_button(
-            self.card_view, u"Сброс", 320, 31, 56, 25, self.col_card, self.col_muted
+            self.card_view, u"Reset", 396, 31, 56, 25, self.col_card, self.col_muted
         )
         self.btn_clear_search.Font = self.font_small
         self.btn_clear_search.Click += self._on_clear_view_search
+        self.tooltip.SetToolTip(self.btn_clear_search, u"Очистить строку поиска видов")
 
         self.chk_all_views = CheckBox()
         self.chk_all_views.Text = u"2D View"
-        self.chk_all_views.Location = Point(384, 34)
-        self.chk_all_views.Size = Size(165, 20)
+        self.chk_all_views.Location = Point(458, 34)
+        self.chk_all_views.Size = Size(88, 20)
         self.chk_all_views.Font = self.font_small
         self.chk_all_views.ForeColor = self.col_muted
         self.chk_all_views.CheckedChanged += self._on_toggle_all_views
         self.tooltip.SetToolTip(
             self.chk_all_views,
-            u"Включить в выпадающие списки Кадров 1..3 также 2D-виды проекта Revit (планы этажей, фасады, разрезы, чертёжные виды).",
+            u"Показать в выпадающих списках Scene #1..#3 также 2D-виды проекта (планы, фасады, разрезы)",
         )
         self.card_view.Controls.Add(self.chk_all_views)
 
         self.slot_row_labels = []
-        slot_short_names = [u"Кадр 1:", u"Кадр 2:", u"Кадр 3:"]
+        slot_short_names = [u"Scene #1:", u"Scene #2:", u"Scene #3:"]
         for s_idx in range(3):
             row_y = 62 + s_idx * 28
             lbl_s = Label()
@@ -3760,30 +3920,34 @@ class ChutesRevitStudioForm(Form):
 
             cmb_s = ComboBox()
             cmb_s.Location = Point(94, row_y)
-            cmb_s.Size = Size(348, 24)
+            cmb_s.Size = Size(358, 24)
             cmb_s.Font = self.font_reg
+            cmb_s.FlatStyle = FlatStyle.Popup if self.is_dark_mode else FlatStyle.Standard
+            cmb_s.DrawMode = DrawMode.OwnerDrawFixed if self.is_dark_mode else DrawMode.Normal
+            cmb_s.ItemHeight = 18
             cmb_s.DropDownStyle = ComboBoxStyle.DropDownList
+            cmb_s.DrawItem += self._on_combo_draw_item
             cmb_s.SelectedIndexChanged += self._make_slot_combo_handler(s_idx)
             self.tooltip.SetToolTip(
                 cmb_s,
-                u"Выберите 3D-вид из проекта Revit для слота {} (или нажмите «Файл...» справа)".format(s_idx + 1),
+                u"Выберите вид Revit для Scene #{} или нажмите File... справа".format(s_idx + 1),
             )
             self.card_view.Controls.Add(cmb_s)
             self.slot_combos.append(cmb_s)
 
             btn_f = self._create_button(
                 self.card_view,
-                u"Файл...",
-                448,
+                u"File...",
+                458,
                 row_y - 1,
-                68,
+                58,
                 25,
                 self.col_accent_soft,
                 self.col_accent,
             )
             btn_f.Font = self.font_small
             btn_f.Click += self._make_slot_file_handler(s_idx)
-            self.tooltip.SetToolTip(btn_f, u"Выбрать файл изображения с диска для слота {}".format(s_idx + 1))
+            self.tooltip.SetToolTip(btn_f, u"Выбрать готовый графический файл с диска для Scene #{}".format(s_idx + 1))
             self.slot_file_btns.append(btn_f)
 
             btn_clr = self._create_button(
@@ -3798,71 +3962,57 @@ class ChutesRevitStudioForm(Form):
             )
             btn_clr.Font = self.font_small
             btn_clr.Click += self._make_slot_clear_handler(s_idx)
-            self.tooltip.SetToolTip(btn_clr, u"Очистить/отключить слот {}".format(s_idx + 1))
+            self.tooltip.SetToolTip(btn_clr, u"Очистить и отключить Scene #{}".format(s_idx + 1))
             self.slot_clear_btns.append(btn_clr)
 
-        # --- Prompt (слева) и Negative Prompt (справа) + Sys.Prompt + Шаблон ---
+        # --- Prompt (слева) и Negative Prompt (справа) + Sys.Prompt + +Template ---
         self.lbl_pr = Label()
         self.lbl_pr.Text = u"Prompt:"
         self.lbl_pr.Location = Point(14, 150)
-        self.lbl_pr.Size = Size(50, 20)
+        self.lbl_pr.Size = Size(56, 20)
         self.lbl_pr.Font = self.font_small_bold
         self.lbl_pr.ForeColor = self.col_text
         self.tooltip.SetToolTip(
             self.lbl_pr,
-            u"Основной текстовый запрос (Prompt): опишите желаемый стиль, материалы фасада, окружение и освещение.",
+            u"Основной промпт: опишите желаемый стиль, материалы фасада, освещение и окружение",
         )
         self.card_view.Controls.Add(self.lbl_pr)
 
         self.btn_sys_prompt = self._create_button(
-            self.card_view, u"Sys.Prompt", 64, 147, 82, 23, self.col_card, self.col_text
+            self.card_view, u"Sys.Prompt [off]", 72, 145, 118, 25, self.col_card, self.col_text
         )
         self.btn_sys_prompt.Font = self.font_small
         self.btn_sys_prompt.Click += self._on_sys_prompt_click
         self.tooltip.SetToolTip(
             self.btn_sys_prompt,
-            u"Системный промпт (System Prompt): задаёт общие инструкции сохранения 3D-геометрии и перспективы Revit. Нажмите для настройки.",
+            u"Настроить системный промпт (правила сохранения 3D-геометрии и перспективы кадра)",
         )
 
         self.btn_pos_tpl = self._create_button(
-            self.card_view, u"+ Шаблон", 149, 147, 68, 23, self.col_accent_soft, self.col_accent
+            self.card_view, u"+Template", 194, 145, 88, 25, self.col_accent_soft, self.col_accent
         )
         self.btn_pos_tpl.Font = self.font_small
         self.btn_pos_tpl.Click += self._on_pos_templates_click
-        self.tooltip.SetToolTip(self.btn_pos_tpl, u"Открыть библиотеку готовых шаблонов для обычного промпта (Prompt).")
-
-        self.btn_pos_paste = self._create_button(
-            self.card_view, u"Вставить", 220, 147, 62, 23, self.col_card, self.col_accent
-        )
-        self.btn_pos_paste.Font = self.font_small
-        self.btn_pos_paste.Click += lambda s, a: paste_into_textbox(self.txt_prompt)
-        self.tooltip.SetToolTip(self.btn_pos_paste, u"Вставить текст из буфера обмена в поле Prompt (также работает Ctrl+V и ПКМ)")
+        self.tooltip.SetToolTip(self.btn_pos_tpl, u"Открыть библиотеку шаблонов для основного промпта")
 
         self.lbl_neg_pr = Label()
         self.lbl_neg_pr.Text = u"Negative Prompt:"
         self.lbl_neg_pr.Location = Point(292, 150)
-        self.lbl_neg_pr.Size = Size(120, 20)
+        self.lbl_neg_pr.Size = Size(125, 20)
         self.lbl_neg_pr.Font = self.font_small_bold
         self.lbl_neg_pr.ForeColor = self.col_muted
         self.tooltip.SetToolTip(
             self.lbl_neg_pr,
-            u"Негативный промпт (Negative Prompt): укажите, чего следует избегать на рендере (размытие, искажения геометрии, лишние детали).",
+            u"Негативный промпт: укажите, чего не должно быть на рендере (искажения геометрии, размытие, лишние объекты)",
         )
         self.card_view.Controls.Add(self.lbl_neg_pr)
 
         self.btn_neg_tpl = self._create_button(
-            self.card_view, u"+ Шаблон", 418, 147, 68, 23, self.col_accent_soft, self.col_accent
+            self.card_view, u"+Template", 458, 145, 88, 25, self.col_accent_soft, self.col_accent
         )
         self.btn_neg_tpl.Font = self.font_small
         self.btn_neg_tpl.Click += self._on_neg_templates_click
-        self.tooltip.SetToolTip(self.btn_neg_tpl, u"Открыть библиотеку шаблонов для негативного промпта (Negative Prompt).")
-
-        self.btn_neg_paste = self._create_button(
-            self.card_view, u"Вставить", 488, 147, 62, 23, self.col_card, self.col_accent
-        )
-        self.btn_neg_paste.Font = self.font_small
-        self.btn_neg_paste.Click += lambda s, a: paste_into_textbox(self.txt_neg_prompt)
-        self.tooltip.SetToolTip(self.btn_neg_paste, u"Вставить текст из буфера обмена в поле Negative Prompt (также работает Ctrl+V и ПКМ)")
+        self.tooltip.SetToolTip(self.btn_neg_tpl, u"Открыть библиотеку шаблонов для негативного промпта")
 
         self.txt_prompt = TextBox()
         self.txt_prompt.Location = Point(14, 173)
@@ -3887,7 +4037,7 @@ class ChutesRevitStudioForm(Form):
         self.txt_neg_prompt.Text = u""
         self.tooltip.SetToolTip(
             self.txt_neg_prompt,
-            u"Необязательно: укажите, чего избегать на рендере (или выберите из «+ Шаблон»)",
+            u"Необязательно: перечислите нежелательные детали или выберите готовый шаблон по кнопке +Template",
         )
         self.card_view.Controls.Add(self.txt_neg_prompt)
 
@@ -3934,21 +4084,19 @@ class ChutesRevitStudioForm(Form):
             self.lbl_sz,
             [self.num_size],
             (
-                u"Height (Высота рендера в пикселях, px):\n"
-                u"• Единица измерения: пиксели (px), от 512 до 2048 px (с шагом 64 px).\n"
-                u"• В режиме «Auto Width» задаёт базовое разрешение (максимальную сторону кадра),\n"
-                u"  а вторая сторона рассчитывается автоматически по пропорциям вида Revit.\n"
-                u"• В ручном режиме задаёт точную высоту выходного изображения в пикселях."
+                u"Height (Высота / базовый размер рендера в пикселях, 512–2048, шаг 64)\n"
+                u"Определяет целевое разрешение выходного изображения\n"
+                u"› В режиме Auto Width задаёт большую сторону с сохранением пропорций вида Revit\n"
+                u"› В режиме Manual W×H задаёт точную высоту картинки в пикселях"
             ),
         )
         self._bind_param_help(
             self.lbl_width,
             [self.num_width],
             (
-                u"Width (Ширина рендера в пикселях, px):\n"
-                u"• Единица измерения: пиксели (px), от 512 до 2048 px (с шагом 64 px).\n"
-                u"• В режиме «Auto Width» подбирается автоматически пропорционально кадру Revit.\n"
-                u"• Нажмите кнопку «Auto Width» справа, чтобы разблокировать ручной ввод ширины."
+                u"Width (Ширина рендера в пикселях, 512–2048, шаг 64)\n"
+                u"В режиме Auto Width рассчитывается автоматически по пропорциям кадра Scene #1\n"
+                u"› Нажмите кнопку Auto Width справа, чтобы разблокировать ручной ввод ширины"
             ),
         )
 
@@ -3960,9 +4108,7 @@ class ChutesRevitStudioForm(Form):
         self.tooltip.SetToolTip(
             self.btn_toggle_width,
             (
-                u"Auto Width (Автоматический подбор ширины по пропорциям кадра):\n"
-                u"• По умолчанию включён авто-подбор ширины (Width) в пикселях по пропорциям 3D-вида Revit.\n"
-                u"• Нажмите кнопку, чтобы включить ручной ввод ширины и высоты (Manual W×H)."
+                u"Переключение между автоматическим расчётом ширины по пропорциям кадра (Auto Width) и ручным вводом (Manual W×H)"
             ),
         )
 
@@ -4062,37 +4208,32 @@ class ChutesRevitStudioForm(Form):
             self.lbl_cfg,
             [self.trk_guidance, self.num_guidance],
             (
-                u"Edit Guidance (CFG / Сила следования промпту):\n"
-                u"• Определяет, насколько строго нейросеть подчиняется тексту промпта.\n"
-                u"• 1.0 — базовый быстрый режим для Qwen-Image-Edit-2511 и z-image-turbo\n"
-                u"  (естественный свет и текстуры, максимальная скорость).\n"
-                u"• 2.5 – 4.5 — усиленное влияние промпта и «Негативного промпта»\n"
-                u"  (полезно при сложных инструкциях или связке image 1 + image 2).\n"
-                u"• Выше 7.0 — может давать переконтраст и «пережжённые» детали."
+                u"Edit Guidance (Сила следования промпту / CFG Scale)\n"
+                u"Определяет, насколько строго нейросеть следует текстовому описанию\n"
+                u"› 1.0 — быстрый естественный режим для Qwen-Image-Edit-2511 и z-image-turbo\n"
+                u"› 2.5–4.5 — усиленное влияние промпта и негативного промпта\n"
+                u"› 7.0+ — жёсткое следование тексту (может перенасыщать детали)"
             ),
         )
         self._bind_param_help(
             self.lbl_st,
             [self.trk_steps, self.num_steps],
             (
-                u"Steps (Количество шагов нейросети / num_inference_steps):\n"
-                u"• Число итераций очистки изображения от шума при генерации.\n"
-                u"• 4 шага — оптимально для быстрых моделей (Qwen-Image-Edit-2511, z-image-turbo).\n"
-                u"• 6 – 12 шагов — повышенная проработка мелких деталей фасада, листвы и отражений.\n"
-                u"• 20 – 30 шагов — стандарт для классических SDXL-моделей (imageclassic).\n"
-                u"• Больше шагов = выше детализация, но дольше время рендера."
+                u"Steps (Количество шагов прорисовки)\n"
+                u"Число итераций очистки изображения от шума при генерации\n"
+                u"› 4 шага — оптимальная скорость для Qwen-Image-Edit-2511 и z-image-turbo\n"
+                u"› 6–12 шагов — более детальная проработка текстур фасада, листвы и отражений\n"
+                u"› 20–30 шагов — стандарт для классических SDXL-моделей (imageclassic)"
             ),
         )
         self._bind_param_help(
             self.lbl_seed,
             [self.trk_seed, self.num_seed],
             (
-                u"Seed (Сид / Зерно генерации):\n"
-                u"• Стартовое число генератора случайного шума, определяющее вариант деталей.\n"
-                u"• Одинаковый Seed при тех же настройках даёт повторяемый результат —\n"
-                u"  удобно менять только материал или погоду в промпте при той же композиции.\n"
-                u"• Нажмите «Случайный Seed», чтобы получить новый вариант проработки\n"
-                u"  облаков, листвы, освещения и мелких деталей."
+                u"Seed (Зерно генерации)\n"
+                u"Числовой код случайного шума, определяющий конкретный вариант деталей\n"
+                u"› Одинаковый Seed при тех же настройках даёт повторяемый результат\n"
+                u"› Нажмите Random Seed для поиска нового варианта освещения и деталей"
             ),
         )
 
@@ -4103,7 +4244,7 @@ class ChutesRevitStudioForm(Form):
         self.btn_rand_seed.Click += self._on_random_seed_click
         self.tooltip.SetToolTip(
             self.btn_rand_seed,
-            u"Случайный Seed (Random Seed): сгенерировать новое случайное число Seed для получения нового варианта проработки деталей и освещения.",
+            u"Сгенерировать новое случайное значение Seed для получения другого варианта деталей и освещения",
         )
 
         # --- РЯД ПАПКИ СОХРАНЕНИЯ (VAULT) И КНОПКИ START ---
@@ -4116,7 +4257,7 @@ class ChutesRevitStudioForm(Form):
         self.lbl_dir.Cursor = Cursors.Hand
         self.tooltip.SetToolTip(
             self.lbl_dir,
-            u"Vault (Папка сохранения рендеров):\nНажмите на «Vault:», чтобы открыть текущую папку с рендерами в Проводнике Windows.",
+            u"Нажмите на Vault:, чтобы открыть папку с готовыми рендерами в Проводнике Windows",
         )
         self.lbl_dir.MouseEnter += lambda s, a: setattr(
             self.lbl_dir, "ForeColor", Color.FromArgb(147, 197, 253) if self.is_dark_mode else Color.FromArgb(29, 78, 216)
@@ -4134,19 +4275,19 @@ class ChutesRevitStudioForm(Form):
         self.txt_out_dir.Text = u_str(init_out_dir)
         self.tooltip.SetToolTip(
             self.txt_out_dir,
-            u"Путь к папке сохранения готовых рендеров (Vault). Нажмите на слово «Vault:» слева, чтобы открыть её в Проводнике.",
+            u"Папка сохранения готовых рендеров (нажмите на Vault: слева для быстрого открытия)",
         )
         self.card_view.Controls.Add(self.txt_out_dir)
 
         self.btn_browse_dir = self._create_button(
-            self.card_view, u"Обзор...", 471, 373, 75, 25, self.col_card, self.col_muted
+            self.card_view, u"Browse...", 471, 373, 75, 25, self.col_card, self.col_muted
         )
         self.btn_browse_dir.Font = self.font_small
         self.btn_browse_dir.Click += self._on_browse_out_dir
 
         self.btn_generate = self._create_button(
             self.card_view,
-            u"START | НАЧАТЬ",
+            u"START",
             14,
             408,
             532,
@@ -4165,29 +4306,37 @@ class ChutesRevitStudioForm(Form):
         self.card_prev = self._create_card(610, 272, 636, 470)
 
         self.lbl_sec4 = Label()
-        self.lbl_sec4.Text = u"4. ПРЕВЬЮ КАДРОВ И РЕЗУЛЬТАТ РЕНДЕРА"
+        self.lbl_sec4.Text = u"IV. PREVIEW & RESULTS"
         self.lbl_sec4.Location = Point(14, 10)
-        self.lbl_sec4.Size = Size(440, 20)
+        self.lbl_sec4.Size = Size(320, 20)
         self.lbl_sec4.Font = self.font_sec
         self.lbl_sec4.ForeColor = self.col_dark
+        try:
+            self.lbl_sec4.UseMnemonic = False
+        except Exception:
+            pass
         self.card_prev.Controls.Add(self.lbl_sec4)
 
         self.btn_open_compare = self._create_button(
-            self.card_prev, u"Окно До / После", 496, 7, 124, 24, self.col_card, self.col_accent
+            self.card_prev, u"Before / After", 506, 7, 114, 25, self.col_card, self.col_accent
         )
-        self.btn_open_compare.Font = self.font_small
+        self.btn_open_compare.Font = self.font_small_bold
         self.btn_open_compare.Enabled = False
         self.btn_open_compare.Click += self._on_open_compare_click
+        self.tooltip.SetToolTip(
+            self.btn_open_compare,
+            u"Открыть интерактивное окно сравнения исходного кадра и AI-рендера со шторкой Before / After",
+        )
 
         slot_chk_titles = [
-            u"1. Кадр 1 (Основной вид / файл)",
-            u"2. Кадр 2 (Доп. вид / контуры / файл)",
-            u"3. Кадр 3 (Референс / вид / файл)",
+            u"1. Scene #1 (Primary)",
+            u"2. Scene #2 (Optional)",
+            u"3. Scene #3 (Optional)",
         ]
         slot_placeholder_texts = [
-            u"Кадр 1 не выбран\n(выберите 3D-вид в списке «Кадр 1»\nили нажмите «Файл...»)",
-            u"Неактивно\n(выберите 3D-вид в списке «Кадр 2»\nили нажмите «Файл...»)",
-            u"Неактивно\n(выберите 3D-вид в списке «Кадр 3»\nили нажмите «Файл...»)",
+            u"Inactive\nSelect a view in Scene #1 or click File...",
+            u"Inactive\nSelect a view in Scene #2 or click File...",
+            u"Inactive\nSelect a view in Scene #3 or click File...",
         ]
 
         for s_idx in range(3):
@@ -4208,7 +4357,7 @@ class ChutesRevitStudioForm(Form):
             pic.Click += self._make_slot_pic_click_handler(s_idx)
             self.tooltip.SetToolTip(
                 pic,
-                u"Превью {}: нажмите для просмотра в полном размере (или рендера превью вида)".format(s_idx + 1),
+                u"Превью Scene #{}: нажмите для увеличения или создания превью выбранного вида".format(s_idx + 1),
             )
             self.card_prev.Controls.Add(pic)
             self.slot_pic_boxes.append(pic)
@@ -4227,7 +4376,7 @@ class ChutesRevitStudioForm(Form):
 
         # --- СЛОТ 4: Результат AI-рендера ---
         self.lbl_prev_right = Label()
-        self.lbl_prev_right.Text = u"4. Результат AI-рендера (клик — увеличить):"
+        self.lbl_prev_right.Text = u"4. AI Render Result (click to enlarge)"
         self.lbl_prev_right.Font = self.font_small_bold
         self.lbl_prev_right.ForeColor = self.col_emerald_dark
         self.card_prev.Controls.Add(self.lbl_prev_right)
@@ -4238,11 +4387,11 @@ class ChutesRevitStudioForm(Form):
         self.pic_result.BorderStyle = BorderStyle.FixedSingle
         self.pic_result.Cursor = Cursors.Hand
         self.pic_result.Click += self._on_result_preview_click
-        self.tooltip.SetToolTip(self.pic_result, u"Превью 4: Нажмите, чтобы открыть готовый AI-рендер в полном размере")
+        self.tooltip.SetToolTip(self.pic_result, u"Нажмите, чтобы открыть готовый AI-рендер в полном размере")
         self.card_prev.Controls.Add(self.pic_result)
 
         self.lbl_preview_meta = Label()
-        self.lbl_preview_meta.Text = u"Для каждого из 3 кадров можно задать любой вид Revit или файл с диска."
+        self.lbl_preview_meta.Text = u"Assign any Revit view or external image file to Scene #1..#3"
         self.lbl_preview_meta.Font = self.font_small
         self.lbl_preview_meta.ForeColor = self.col_muted
         self.card_prev.Controls.Add(self.lbl_preview_meta)
@@ -4253,7 +4402,7 @@ class ChutesRevitStudioForm(Form):
         self.card_prog = self._create_card(16, 752, 1230, 100)
 
         self.lbl_stage = Label()
-        self.lbl_stage.Text = u"Готов к работе. Окно открыто мгновенно без предварительной печати 3D-вида."
+        self.lbl_stage.Text = u"Ready — select a view or prompt and press START"
         self.lbl_stage.Location = Point(14, 8)
         self.lbl_stage.Size = Size(1200, 20)
         self.lbl_stage.Font = self.font_sec
@@ -4298,7 +4447,7 @@ class ChutesRevitStudioForm(Form):
         self.lbl_github_link.Font = Font("Segoe UI", 8.25, FontStyle.Underline)
         self.lbl_github_link.ForeColor = self.col_accent
         self.lbl_github_link.Cursor = Cursors.Hand
-        self.tooltip.SetToolTip(self.lbl_github_link, u"Открыть https://github.com/alxiskra в браузере")
+        self.tooltip.SetToolTip(self.lbl_github_link, u"Открыть страницу автора https://github.com/alxiskra в браузере")
         self.lbl_github_link.MouseEnter += lambda s, a: setattr(
             self.lbl_github_link, "ForeColor", Color.FromArgb(147, 197, 253) if self.is_dark_mode else Color.FromArgb(29, 78, 216)
         )
@@ -4310,7 +4459,7 @@ class ChutesRevitStudioForm(Form):
 
         self.btn_exit_bottom = self._create_button(
             self,
-            u"EXIT | ВЫХОД",
+            u"EXIT",
             1066,
             858,
             180,
@@ -4338,6 +4487,18 @@ class ChutesRevitStudioForm(Form):
         ]
         for tb_ctrl in self._all_textboxes:
             enable_textbox_clipboard(tb_ctrl)
+
+        self._all_numboxes = [
+            self.num_size,
+            self.num_width,
+            self.num_guidance,
+            self.num_steps,
+            self.num_seed,
+        ]
+        for nb_ctrl in self._all_numboxes:
+            enable_numeric_clipboard(nb_ctrl)
+
+        self._all_combos = [self.cmb_profile] + list(self.slot_combos)
 
         # Таймер опроса физических клавиш (GetAsyncKeyState) для обхода перехвата Ctrl+C / Ctrl+V главным окном Revit
         self._kb_prev_state = {}
@@ -4414,6 +4575,11 @@ class ChutesRevitStudioForm(Form):
         self.btn_del_prof.Location = Point(left_w - 14 - 78, 34)
         self.btn_save_prof.Location = Point(self.btn_del_prof.Location.X - 6 - 94, 34)
         self.cmb_profile.Size = Size(max(140, self.btn_save_prof.Location.X - 96), 24)
+        try:
+            self.cmb_profile.SelectionLength = 0
+            self.cmb_profile.Invalidate()
+        except Exception:
+            pass
         self.txt_base_url.Size = Size(max(200, left_w - 104), 24)
         self.btn_toggle_key.Location = Point(left_w - 14 - 74, 103)
         self.txt_api_key.Size = Size(max(180, self.btn_toggle_key.Location.X - 96), 24)
@@ -4424,9 +4590,9 @@ class ChutesRevitStudioForm(Form):
         self.card_models.Location = Point(right_x, header_h + 10)
         self.card_models.Size = Size(right_w, top_row_h)
         inner_r = right_w - 28
-        self.lbl_sec2.Size = Size(max(260, right_w - 195), 20)
-        self.lbl_models_status.Location = Point(max(280, right_w - 184), 9)
-        self.lbl_models_status.Size = Size(170, 18)
+        self.lbl_sec2.Size = Size(max(240, right_w - 230), 20)
+        self.lbl_models_status.Location = Point(max(260, right_w - 224), 9)
+        self.lbl_models_status.Size = Size(210, 18)
         self.lst_models.Size = Size(inner_r, 82)
 
         self.btn_del_model.Location = Point(right_w - 14 - 80, 114)
@@ -4449,16 +4615,30 @@ class ChutesRevitStudioForm(Form):
         self.card_view.Size = Size(left_w, mid_h)
         self.lbl_sec3.Size = Size(inner_l, 20)
 
-        self.chk_all_views.Location = Point(left_w - 14 - 135, 34)
-        self.chk_all_views.Size = Size(135, 20)
-        self.btn_clear_search.Location = Point(self.chk_all_views.Location.X - 6 - 56, 31)
-        self.txt_view_search.Size = Size(max(110, self.btn_clear_search.Location.X - 100), 24)
+        # Ширина блока [File... (58px)] + 4px + [✕ (26px)] = 88px — строго равна ширине обеих кнопок [+Template (88px)],
+        # поэтому левый край «File...» и левый край правой «+Template» стоят идеально заподлицо!
+        file_btn_w = 58
+        clear_btn_w = 26
+        tpl_btn_w = file_btn_w + 4 + clear_btn_w  # 88 px
+        file_col_x = (left_w - 14 - clear_btn_w) - 4 - file_btn_w
+        cmb_w = max(160, file_col_x - 94 - 6)
+
+        # Блок [txt_view_search + btn_clear_search] начинается на X=94 и заканчивается строго заподлицо с нижними списками Scene #1..#3 (94 + cmb_w),
+        # а чекбокс «2D View» располагается ровно над кнопкой «File...» (X = file_col_x)
+        clear_search_w = 56
+        self.btn_clear_search.Location = Point(94 + cmb_w - clear_search_w, 31)
+        self.btn_clear_search.Size = Size(clear_search_w, 25)
+        self.txt_view_search.Location = Point(94, 32)
+        self.txt_view_search.Size = Size(max(100, self.btn_clear_search.Location.X - 94 - 4), 24)
+        self.chk_all_views.Location = Point(file_col_x, 34)
+        self.chk_all_views.Size = Size(tpl_btn_w, 20)
 
         for s_idx in range(3):
             row_y = 62 + s_idx * 28
-            self.slot_clear_btns[s_idx].Location = Point(left_w - 14 - 26, row_y - 1)
-            self.slot_file_btns[s_idx].Location = Point(self.slot_clear_btns[s_idx].Location.X - 4 - 68, row_y - 1)
-            cmb_w = max(160, self.slot_file_btns[s_idx].Location.X - 94 - 6)
+            self.slot_clear_btns[s_idx].Location = Point(left_w - 14 - clear_btn_w, row_y - 1)
+            self.slot_clear_btns[s_idx].Size = Size(clear_btn_w, 25)
+            self.slot_file_btns[s_idx].Location = Point(file_col_x, row_y - 1)
+            self.slot_file_btns[s_idx].Size = Size(file_btn_w, 25)
             self.slot_combos[s_idx].Location = Point(94, row_y)
             self.slot_combos[s_idx].Size = Size(cmb_w, 24)
 
@@ -4473,31 +4653,28 @@ class ChutesRevitStudioForm(Form):
         prompt_top_y = 173
         prompt_h = max(54, size_row_y - prompt_top_y - 7)
         col_pr_gap = 10
-        half_pr_w = max(180, int((inner_l - col_pr_gap) / 2))
+        half_pr_w = max(180, int((inner_l - col_pr_gap) // 2))
         right_pr_x = 14 + half_pr_w + col_pr_gap
+        right_pr_w = max(180, (left_w - 14) - right_pr_x)
 
         self.lbl_pr.Location = Point(14, prompt_hdr_y + 2)
-        self.lbl_pr.Size = Size(50, 20)
-        self.btn_pos_paste.Location = Point(14 + half_pr_w - 62, prompt_hdr_y - 1)
-        self.btn_pos_paste.Size = Size(62, 23)
-        self.btn_pos_tpl.Location = Point(self.btn_pos_paste.Location.X - 3 - 68, prompt_hdr_y - 1)
-        self.btn_pos_tpl.Size = Size(68, 23)
-        sys_btn_x = 64
-        sys_btn_w = max(72, self.btn_pos_tpl.Location.X - 3 - sys_btn_x)
-        self.btn_sys_prompt.Location = Point(sys_btn_x, prompt_hdr_y - 1)
-        self.btn_sys_prompt.Size = Size(sys_btn_w, 23)
+        self.lbl_pr.Size = Size(56, 20)
+        self.btn_pos_tpl.Location = Point(14 + half_pr_w - tpl_btn_w, prompt_hdr_y - 3)
+        self.btn_pos_tpl.Size = Size(tpl_btn_w, 25)
+        sys_btn_x = 72
+        sys_btn_w = max(88, self.btn_pos_tpl.Location.X - 6 - sys_btn_x)
+        self.btn_sys_prompt.Location = Point(sys_btn_x, prompt_hdr_y - 3)
+        self.btn_sys_prompt.Size = Size(sys_btn_w, 25)
 
-        self.btn_neg_paste.Location = Point(right_pr_x + half_pr_w - 62, prompt_hdr_y - 1)
-        self.btn_neg_paste.Size = Size(62, 23)
-        self.btn_neg_tpl.Location = Point(self.btn_neg_paste.Location.X - 3 - 68, prompt_hdr_y - 1)
-        self.btn_neg_tpl.Size = Size(68, 23)
+        self.btn_neg_tpl.Location = Point(left_w - 14 - tpl_btn_w, prompt_hdr_y - 3)
+        self.btn_neg_tpl.Size = Size(tpl_btn_w, 25)
         self.lbl_neg_pr.Location = Point(right_pr_x, prompt_hdr_y + 2)
-        self.lbl_neg_pr.Size = Size(max(105, self.btn_neg_tpl.Location.X - right_pr_x - 2), 20)
+        self.lbl_neg_pr.Size = Size(max(115, self.btn_neg_tpl.Location.X - right_pr_x - 4), 20)
 
         self.txt_prompt.Location = Point(14, prompt_top_y)
         self.txt_prompt.Size = Size(half_pr_w, prompt_h)
         self.txt_neg_prompt.Location = Point(right_pr_x, prompt_top_y)
-        self.txt_neg_prompt.Size = Size(half_pr_w, prompt_h)
+        self.txt_neg_prompt.Size = Size(right_pr_w, prompt_h)
 
         # 3 ряда ползунков строго друг под другом (одинаковая координата X и одинаковая ширина ползунков и полей ввода)
         slider_x = 104
@@ -4518,8 +4695,11 @@ class ChutesRevitStudioForm(Form):
         self.num_width.Location = Point(206, size_row_y)
         self.num_width.Size = Size(76, 24)
 
-        self.btn_toggle_width.Location = Point(292, size_row_y - 1)
-        self.btn_toggle_width.Size = Size(rand_btn_w, 25)
+        # Кнопка Auto Width заканчивается строго заподлицо с правым краем счётчиков NumericUpDown (num_box_x + num_box_w)
+        auto_w_btn_x = 292
+        auto_w_btn_w = max(118, (num_box_x + num_box_w) - auto_w_btn_x)
+        self.btn_toggle_width.Location = Point(auto_w_btn_x, size_row_y - 1)
+        self.btn_toggle_width.Size = Size(auto_w_btn_w, 25)
 
         self.lbl_cfg.Location = Point(14, cfg_row_y + 3)
         self.lbl_cfg.Size = Size(88, 22)
@@ -4556,8 +4736,14 @@ class ChutesRevitStudioForm(Form):
         # Карточка 4 (справа — сетка 2x2 из 4 превью)
         self.card_prev.Location = Point(right_x, mid_y)
         self.card_prev.Size = Size(right_w, mid_h)
-        self.btn_open_compare.Location = Point(right_w - 14 - 124, 7)
-        self.lbl_sec4.Size = Size(max(260, right_w - 150), 20)
+        cmp_btn_w = 114
+        self.btn_open_compare.Location = Point(right_w - 14 - cmp_btn_w, 6)
+        self.btn_open_compare.Size = Size(cmp_btn_w, 25)
+        self.lbl_sec4.Size = Size(max(180, self.btn_open_compare.Location.X - 24), 20)
+        try:
+            self.btn_open_compare.BringToFront()
+        except Exception:
+            pass
 
         col_gap = 14
         cell_w = max(180, int((inner_r - col_gap) / 2))
@@ -4626,7 +4812,13 @@ class ChutesRevitStudioForm(Form):
                 if tb is not None and tb.Focused:
                     focused_tb = tb
                     break
+            focused_nb = None
             if focused_tb is None:
+                for nb in getattr(self, "_all_numboxes", ()):
+                    if nb is not None and (nb.Focused or nb.ContainsFocus):
+                        focused_nb = nb
+                        break
+            if focused_tb is None and focused_nb is None:
                 self._kb_prev_state.clear()
                 return
 
@@ -4646,6 +4838,23 @@ class ChutesRevitStudioForm(Form):
                 was_dn = self._kb_prev_state.get(vk_code, False)
                 self._kb_prev_state[vk_code] = is_dn
                 return is_dn and (not was_dn)
+
+            if focused_nb is not None:
+                if ctrl_down and not shift_down:
+                    if _edge_pressed(0x56):
+                        if (now_ts - _LAST_CLIPBOARD_SHORTCUT_TS[0]) > 0.15:
+                            _LAST_CLIPBOARD_SHORTCUT_TS[0] = now_ts
+                            paste_into_numeric_updown(focused_nb)
+                    elif _edge_pressed(0x43) or _edge_pressed(0x2D):
+                        if (now_ts - _LAST_CLIPBOARD_SHORTCUT_TS[0]) > 0.15:
+                            _LAST_CLIPBOARD_SHORTCUT_TS[0] = now_ts
+                            copy_from_numeric_updown(focused_nb)
+                elif shift_down and not ctrl_down:
+                    if _edge_pressed(0x2D):
+                        if (now_ts - _LAST_CLIPBOARD_SHORTCUT_TS[0]) > 0.15:
+                            _LAST_CLIPBOARD_SHORTCUT_TS[0] = now_ts
+                            paste_into_numeric_updown(focused_nb)
+                return
 
             if ctrl_down and not shift_down:
                 # V (0x56), C (0x43), X (0x58), A (0x41), Z (0x5A), Insert (0x2D)
@@ -4709,6 +4918,51 @@ class ChutesRevitStudioForm(Form):
     # --------------------------------------------------------------------------
     # ОБРАБОТЧИКИ ПОЛЗУНКОВ, СИДА, РАЗМЕРОВ, СИСТЕМНОГО ПРОМПТА И ШАБЛОНОВ
     # --------------------------------------------------------------------------
+    def _on_combo_draw_item(self, sender, e):
+        """Отрисовывает выпадающие списки ComboBox (Scene #1..#3) в тёмной теме."""
+        try:
+            try:
+                st_val = Convert.ToInt32(e.State)
+                sel_bit = Convert.ToInt32(DrawItemState.Selected)
+                edit_bit = Convert.ToInt32(DrawItemState.ComboBoxEdit)
+                is_sel = ((st_val & sel_bit) != 0) and ((st_val & edit_bit) == 0)
+            except Exception:
+                is_sel = False
+            bg = self.col_accent_soft if is_sel else self.col_input_bg
+            fg = self.col_accent if is_sel else self.col_text
+            br_bg = SolidBrush(bg)
+            e.Graphics.FillRectangle(br_bg, e.Bounds)
+            br_bg.Dispose()
+            idx = int(e.Index)
+            if 0 <= idx < sender.Items.Count:
+                txt = u_str(sender.Items[idx])
+                try:
+                    t_rect = Rectangle(
+                        int(e.Bounds.X + 3),
+                        int(e.Bounds.Y),
+                        max(10, int(e.Bounds.Width - 6)),
+                        int(e.Bounds.Height),
+                    )
+                    t_flags = (
+                        TextFormatFlags.VerticalCenter
+                        | TextFormatFlags.Left
+                        | TextFormatFlags.SingleLine
+                        | TextFormatFlags.NoPrefix
+                        | TextFormatFlags.PreserveGraphicsClipping
+                    )
+                    TextRenderer.DrawText(e.Graphics, txt, sender.Font, t_rect, fg, bg, t_flags)
+                except Exception:
+                    try:
+                        e.Graphics.TextRenderingHint = TextRenderingHint.ClearTypeGridFit
+                    except Exception:
+                        pass
+                    ty = int(e.Bounds.Y) + max(0, int((e.Bounds.Height - sender.Font.Height) // 2))
+                    br_fg = SolidBrush(fg)
+                    e.Graphics.DrawString(txt, sender.Font, br_fg, float(e.Bounds.X + 4), float(ty))
+                    br_fg.Dispose()
+        except Exception:
+            pass
+
     def _on_toggle_theme(self, sender, args):
         self.is_dark_mode = not bool(self.is_dark_mode)
         self.profiles_data["ui_dark_mode"] = self.is_dark_mode
@@ -4718,6 +4972,16 @@ class ChutesRevitStudioForm(Form):
     def _apply_theme(self):
         self._set_palette_colors(self.is_dark_mode)
         self.BackColor = self.col_bg
+        self.pnl_header.BackColor = self.col_header_bg
+        try:
+            self.lbl_app_title.UseCompatibleTextRendering = False
+            self.lbl_app_sub.UseCompatibleTextRendering = False
+            self.lbl_bottom_hint.UseCompatibleTextRendering = False
+            # Подчёркнутые ссылки оставляем на GDI+ (True), чтобы линия подчёркивания не пересекала нижнюю петельку буквы "g"
+            self.lbl_github_link.UseCompatibleTextRendering = True
+            self.lbl_dir.UseCompatibleTextRendering = True
+        except Exception:
+            pass
         self.btn_theme_toggle.Text = u"Theme: Dark" if self.is_dark_mode else u"Theme: Light"
         self._style_button_by_role(self.btn_theme_toggle)
 
@@ -4743,9 +5007,24 @@ class ChutesRevitStudioForm(Form):
                         ctrl.Font = self.font_prompt
                     else:
                         ctrl.ForeColor = self.col_text
+                    if isinstance(ctrl, ComboBox):
+                        try:
+                            ctrl.FlatStyle = FlatStyle.Popup if self.is_dark_mode else FlatStyle.Standard
+                            if ctrl in self.slot_combos:
+                                ctrl.DrawMode = DrawMode.OwnerDrawFixed if self.is_dark_mode else DrawMode.Normal
+                        except Exception:
+                            pass
+                        ctrl.Invalidate()
                 elif isinstance(ctrl, TrackBar):
                     ctrl.BackColor = self.col_card
                 elif isinstance(ctrl, (Label, CheckBox)):
+                    try:
+                        if isinstance(ctrl, Label):
+                            ctrl.UseMnemonic = False
+                        if ctrl is not self.lbl_dir:
+                            ctrl.UseCompatibleTextRendering = False
+                    except Exception:
+                        pass
                     if ctrl is self.lbl_prev_right:
                         ctrl.ForeColor = self.col_emerald if self.is_dark_mode else self.col_emerald_dark
                     elif ctrl in sec_labels:
@@ -4764,6 +5043,10 @@ class ChutesRevitStudioForm(Form):
         self._update_sys_prompt_btn_appearance()
         self._sync_width_btn_appearance()
         for s_idx in range(3):
+            try:
+                self.slot_placeholders[s_idx].UseCompatibleTextRendering = False
+            except Exception:
+                pass
             self._sync_slot_visual_state(s_idx)
 
     def _update_sys_prompt_btn_appearance(self):
@@ -4771,10 +5054,10 @@ class ChutesRevitStudioForm(Form):
             u_str(self.profiles_data.get("system_prompt", u"")).strip()
         )
         if is_active:
-            self.btn_sys_prompt.Text = u"Sys.Prompt [ON]"
-            self.btn_sys_prompt.Tag = u"accent_soft"
+            self.btn_sys_prompt.Text = u"Sys.Prompt [on]"
+            self.btn_sys_prompt.Tag = u"emerald_soft"
         else:
-            self.btn_sys_prompt.Text = u"Sys.Prompt"
+            self.btn_sys_prompt.Text = u"Sys.Prompt [off]"
             self.btn_sys_prompt.Tag = u"surface"
         self._style_button_by_role(self.btn_sys_prompt)
 
@@ -4782,8 +5065,8 @@ class ChutesRevitStudioForm(Form):
         changed = show_system_prompt_dialog(self, self.profiles_data)
         self._update_sys_prompt_btn_appearance()
         if changed:
-            state_str = u"ВКЛЮЧЁН" if self.profiles_data.get("use_system_prompt") else u"ВЫКЛЮЧЕН"
-            self.log_step(u"Системный промпт обновлён ({}).".format(state_str), progress_val=0)
+            state_str = u"ON" if self.profiles_data.get("use_system_prompt") else u"OFF"
+            self.log_step(u"System Prompt updated ({})".format(state_str), progress_val=0)
 
     def _on_pos_templates_click(self, sender, args):
         show_prompt_templates_dialog(self, self.profiles_data, self.txt_prompt, is_negative=False)
@@ -4867,7 +5150,7 @@ class ChutesRevitStudioForm(Form):
         except Exception:
             pass
         self._syncing_params = False
-        self.log_step(u"Установлен случайный Seed: {}".format(rnd), progress_val=0)
+        self.log_step(u"Random Seed set to {}".format(rnd), progress_val=0)
 
     def _sync_width_btn_appearance(self):
         if self.manual_width_enabled:
@@ -4884,10 +5167,10 @@ class ChutesRevitStudioForm(Form):
         self.manual_width_enabled = not self.manual_width_enabled
         self._sync_width_btn_appearance()
         if self.manual_width_enabled:
-            self.log_step(u"Включён режим ручного задания Width и Height (в пикселях).", progress_val=0)
+            self.log_step(u"Manual W×H mode enabled (custom width and height in px)", progress_val=0)
         else:
             self._recalc_auto_width_preview()
-            self.log_step(u"Включён режим Auto Width (автоматический подбор ширины по пропорциям кадра).", progress_val=0)
+            self.log_step(u"Auto Width mode enabled (aspect ratio matched to scene)", progress_val=0)
 
     def _on_height_value_changed(self, sender, args):
         if not self.manual_width_enabled:
@@ -4945,10 +5228,10 @@ class ChutesRevitStudioForm(Form):
     def _get_slot_short_description(self, s_idx):
         slot = self.slots[s_idx]
         if slot["source_type"] == "file" and slot["file_path"]:
-            return u"Файл: {}".format(Path.GetFileName(slot["file_path"]))
+            return u"File: {}".format(Path.GetFileName(slot["file_path"]))
         if slot["source_type"] == "view" and slot["view_name"]:
-            return u"Вид: {}".format(slot["view_name"])
-        return u"не задан"
+            return u"View: {}".format(slot["view_name"])
+        return u"Inactive"
 
     def _update_active_slots_summary(self):
         active_parts = []
@@ -4959,15 +5242,15 @@ class ChutesRevitStudioForm(Form):
         if active_parts:
             summary_str = u"  |  ".join(active_parts)
         else:
-            summary_str = u"нет выбранных кадров (выберите 3D-вид/файл или используйте Txt2Img)"
-        self.lbl_preview_meta.Text = u"Активные кадры ({}/3): {}".format(len(active_parts), summary_str)
+            summary_str = u"none selected (select a 3D view/file or use Text-to-Image)"
+        self.lbl_preview_meta.Text = u"Active scenes ({}/3): {}".format(len(active_parts), summary_str)
         self._recalc_auto_width_preview()
 
     # --------------------------------------------------------------------------
     # УПРАВЛЕНИЕ ПРОФИЛЯМИ И ПОЛЬЗОВАТЕЛЬСКИМИ МОДЕЛЯМИ
     # --------------------------------------------------------------------------
     def _get_active_profile_dict(self):
-        p_name = u_str(self.cmb_profile.Text).strip() or u"Chutes.ai (Основной)"
+        p_name = u_str(self.cmb_profile.Text).strip() or u"Chutes.ai"
         profiles_dict = self.profiles_data.get("profiles", {})
         if p_name not in profiles_dict:
             profiles_dict[p_name] = {
@@ -5012,7 +5295,7 @@ class ChutesRevitStudioForm(Form):
             self.profiles_data["active_profile"] = p_name
             save_profiles_data(self.profiles_data)
             self._refresh_models_list(auto_startup=True)
-            self.log_step(u"Загружен профиль '{}'.".format(p_name), progress_val=0)
+            self.log_step(u"Profile '{}' loaded".format(p_name), progress_val=0)
 
     def _on_save_profile(self, sender, args):
         p_name, prof_obj = self._get_active_profile_dict()
@@ -5025,9 +5308,9 @@ class ChutesRevitStudioForm(Form):
             self.cmb_profile.Items.Add(p_name)
         ok = save_profiles_data(self.profiles_data)
         if ok:
-            self.log_step(u"Профиль '{}' (включая список моделей) сохранён.".format(p_name), progress_val=0, status_color=self.col_success)
+            self.log_step(u"Profile '{}' saved".format(p_name), progress_val=0, status_color=self.col_success)
         else:
-            self.log_step(u"Не удалось сохранить файл профиля.", progress_val=0)
+            self.log_step(u"Failed to save profile file", progress_val=0)
 
     def _on_delete_profile(self, sender, args):
         p_name = u_str(self.cmb_profile.Text).strip()
@@ -5039,20 +5322,20 @@ class ChutesRevitStudioForm(Form):
             save_profiles_data(self.profiles_data)
             self._init_profiles_and_inputs(None, None)
             self._refresh_models_list(auto_startup=True)
-            self.log_step(u"Профиль '{}' удалён.".format(p_name), progress_val=0)
+            self.log_step(u"Profile '{}' deleted".format(p_name), progress_val=0)
         else:
-            self.log_step(u"Нельзя удалить единственный профиль.", progress_val=0)
+            self.log_step(u"Cannot delete the only remaining profile", progress_val=0)
 
     def _on_toggle_api_key(self, sender, args):
         self.txt_api_key.UseSystemPasswordChar = not self.txt_api_key.UseSystemPasswordChar
-        self.btn_toggle_key.Text = u"Показать" if self.txt_api_key.UseSystemPasswordChar else u"Скрыть"
+        self.btn_toggle_key.Text = u"Show" if self.txt_api_key.UseSystemPasswordChar else u"Hide"
 
     def _on_add_custom_model_click(self, sender, args):
         raw_m = u_str(self.txt_custom_model.Text).strip()
         if not raw_m:
             MessageBox.Show(
-                u"Введите название или ID модели в поле «Add Model» (и при необходимости укажите Endpoint ниже), затем нажмите «+ В профиль».",
-                u"Добавление модели",
+                u"Enter a model name or ID in Add Model (and optionally an Endpoint below), then click + To Profile",
+                u"Add Custom Model",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information,
             )
@@ -5083,7 +5366,7 @@ class ChutesRevitStudioForm(Form):
 
         self._refresh_models_list(auto_startup=True)
         self.log_step(
-            u"Модель '{}' сохранена в профиле '{}' (эндпоинт: {}).".format(new_entry["id"], p_name, new_entry["endpoint"]),
+            u"Model '{}' saved to profile '{}' (endpoint: {})".format(new_entry["id"], p_name, new_entry["endpoint"]),
             progress_val=0,
             status_color=self.col_success,
         )
@@ -5103,9 +5386,9 @@ class ChutesRevitStudioForm(Form):
             save_profiles_data(self.profiles_data)
             self.txt_custom_model.Text = u""
             self._refresh_models_list(auto_startup=True)
-            self.log_step(u"Пользовательская модель '{}' удалена из профиля '{}'.".format(target_id, p_name), progress_val=0)
+            self.log_step(u"Custom model '{}' removed from profile '{}'".format(target_id, p_name), progress_val=0)
         else:
-            self.log_step(u"Модель '{}' входит в базовый каталог Chutes (удаляются только добавленные вручную модели).".format(target_id), progress_val=0)
+            self.log_step(u"Model '{}' is a built-in catalog model (only custom ★ models can be removed)".format(target_id), progress_val=0)
 
     # --------------------------------------------------------------------------
     # ЗАГРУЗКА И ВЫБОР МОДЕЛЕЙ
@@ -5121,7 +5404,7 @@ class ChutesRevitStudioForm(Form):
 
         if not auto_startup:
             self.log_step(
-                u"Запрос доступных моделей генерации изображений у поставщика ({})...".format(base_url),
+                u"Querying available image models from provider ({})...".format(base_url),
                 progress_val=0,
                 status_color=self.col_accent,
             )
@@ -5146,10 +5429,10 @@ class ChutesRevitStudioForm(Form):
                 break
         if self.lst_models.Items.Count > 0:
             self.lst_models.SelectedIndex = target_idx
-        self.lbl_models_status.Text = u"Моделей: {} ({})".format(len(self.available_models), note)
+        self.lbl_models_status.Text = u"Models: {} ({})".format(len(self.available_models), note)
         if not auto_startup:
             self.log_step(
-                u"Список моделей обновлён ({} шт., источник: {}).".format(len(self.available_models), note),
+                u"Models list updated ({} total, {})".format(len(self.available_models), note),
                 progress_val=0,
                 status_color=self.col_success,
             )
@@ -5179,7 +5462,7 @@ class ChutesRevitStudioForm(Form):
 
         if not self._is_initializing:
             self.log_step(
-                u"Выбрана модель: {}  |  {}".format(u_str(m.get("id")), u_str(m.get("description", u""))),
+                u"Selected model: {}  |  {}".format(u_str(m.get("id")), u_str(m.get("description", u""))),
                 progress_val=0,
             )
 
@@ -5288,7 +5571,7 @@ class ChutesRevitStudioForm(Form):
         self._sync_slot_visual_state(s_idx)
         self._update_active_slots_summary()
         if not self._is_initializing:
-            self.log_step(u"Кадр {} очищен и отключён.".format(s_idx + 1), progress_val=0)
+            self.log_step(u"Scene #{} cleared and set to Inactive".format(s_idx + 1), progress_val=0)
 
     def _sync_slot_visual_state(self, s_idx):
         slot = self.slots[s_idx]
@@ -5306,17 +5589,21 @@ class ChutesRevitStudioForm(Form):
         pic = self.slot_pic_boxes[s_idx]
         ph = self.slot_placeholders[s_idx]
         pic.BackColor = self.col_slot_active if is_on else self.col_slot_inactive
+        try:
+            ph.BackColor = pic.BackColor
+        except Exception:
+            pass
 
         if slot["source_type"] == "view" and slot["view_name"] and pic.Image is None:
-            ph.Text = u"Выбран вид Revit:\n«{}»\n(кликните сюда для рендера превью\nили сразу нажмите START)".format(
+            ph.Text = u"Revit View: «{}»\nClick to render preview or press START".format(
                 slot["view_name"]
             )
             ph.Visible = True
         elif pic.Image is None:
             default_ph = [
-                u"Кадр 1 не выбран\n(выберите 3D-вид в списке «Кадр 1»\nили нажмите «Файл...»)",
-                u"Неактивно\n(выберите 3D-вид в списке «Кадр 2»\nили нажмите «Файл...»)",
-                u"Неактивно\n(выберите 3D-вид в списке «Кадр 3»\nили нажмите «Файл...»)",
+                u"Inactive\nSelect a view in Scene #1 or click File...",
+                u"Inactive\nSelect a view in Scene #2 or click File...",
+                u"Inactive\nSelect a view in Scene #3 or click File...",
             ]
             ph.Text = default_ph[s_idx]
             ph.Visible = True
@@ -5324,18 +5611,18 @@ class ChutesRevitStudioForm(Form):
             ph.Visible = False
 
         if slot["source_type"] == "file" and slot["file_path"]:
-            self.slot_checkboxes[s_idx].Text = u"{}. Кадр {} [Файл: {}]".format(
+            self.slot_checkboxes[s_idx].Text = u"{}. Scene #{} [File: {}]".format(
                 s_idx + 1, s_idx + 1, Path.GetFileName(slot["file_path"])
             )
         elif slot["source_type"] == "view" and slot["view_name"]:
-            self.slot_checkboxes[s_idx].Text = u"{}. Кадр {} [Вид: {}]".format(
+            self.slot_checkboxes[s_idx].Text = u"{}. Scene #{} [View: {}]".format(
                 s_idx + 1, s_idx + 1, slot["view_name"]
             )
         else:
             default_titles = [
-                u"1. Кадр 1 (Основной)",
-                u"2. Кадр 2 (Дополнительный)",
-                u"3. Кадр 3 (Дополнительный)",
+                u"1. Scene #1 (Primary)",
+                u"2. Scene #2 (Optional)",
+                u"3. Scene #3 (Optional)",
             ]
             self.slot_checkboxes[s_idx].Text = default_titles[s_idx]
 
@@ -5355,7 +5642,7 @@ class ChutesRevitStudioForm(Form):
             selected_combo_idx = 0
             file_item_offset = 0
             if slot["source_type"] == "file" and slot["file_path"]:
-                file_label = u"[Файл] " + Path.GetFileName(slot["file_path"])
+                file_label = u"[File] " + Path.GetFileName(slot["file_path"])
                 cmb.Items.Add(file_label)
                 selected_combo_idx = 1
                 file_item_offset = 1
@@ -5371,7 +5658,7 @@ class ChutesRevitStudioForm(Form):
                 and selected_combo_idx == 0
                 and slot["view_name"]
             ):
-                keep_label = u"[Выбранный вид] " + slot["view_name"]
+                keep_label = u"[Selected View] " + slot["view_name"]
                 cmb.Items.Insert(1, keep_label)
                 selected_combo_idx = 1
 
@@ -5402,13 +5689,13 @@ class ChutesRevitStudioForm(Form):
                     self._recalc_auto_width_preview()
                     if not self._is_initializing:
                         self.log_step(
-                            u"Кадр {}: загружен файл '{}' ({}x{} px).".format(
+                            u"Scene #{}: loaded file '{}' ({}x{} px)".format(
                                 s_idx + 1, Path.GetFileName(f_path), img.Width, img.Height
                             ),
                             progress_val=0,
                         )
             except Exception as ex:
-                self.log_step(u"Ошибка чтения файла для Кадра {}: {}".format(s_idx + 1, u_str(ex)), progress_val=0)
+                self.log_step(u"Scene #{}: failed to read file — {}".format(s_idx + 1, u_str(ex)), progress_val=0)
 
         elif slot["source_type"] == "view":
             if self._is_initializing:
@@ -5441,14 +5728,14 @@ class ChutesRevitStudioForm(Form):
                     self._sync_slot_visual_state(s_idx)
                     self._recalc_auto_width_preview()
                     self.log_step(
-                        u"Кадр {}: обновлено превью вида '{}' ({}x{} px).".format(
+                        u"Scene #{}: view preview updated for '{}' ({}x{} px)".format(
                             s_idx + 1, slot["view_name"], img.Width, img.Height
                         ),
                         progress_val=0,
                     )
             except Exception as ex:
                 self.log_step(
-                    u"Кадр {}: не удалось построить превью вида '{}': {}".format(
+                    u"Scene #{}: failed to render preview for '{}' — {}".format(
                         s_idx + 1, slot["view_name"], u_str(ex)
                     ),
                     progress_val=0,
@@ -5491,7 +5778,7 @@ class ChutesRevitStudioForm(Form):
             if cmb.SelectedIndex <= 0 or sel_text == NONE_VIEW_LABEL:
                 self._clear_slot(s_idx)
                 return
-            if sel_text.startswith(u"[Файл]") or sel_text.startswith(u"[Выбранный вид]"):
+            if sel_text.startswith(u"[File]") or sel_text.startswith(u"[Selected View]"):
                 return
 
             matched_v = None
@@ -5557,7 +5844,7 @@ class ChutesRevitStudioForm(Form):
             if pic.Image is not None or (p_path and File.Exists(p_path)):
                 show_full_image_window(
                     p_path,
-                    u"Превью {}: {}".format(s_idx + 1, self._get_slot_short_description(s_idx)),
+                    u"Scene #{}: {}".format(s_idx + 1, self._get_slot_short_description(s_idx)),
                     live_bitmap=pic.Image,
                 )
             elif slot["source_type"] == "view":
@@ -5569,8 +5856,8 @@ class ChutesRevitStudioForm(Form):
 
     def _pick_file_for_slot(self, s_idx):
         dlg = OpenFileDialog()
-        dlg.Title = u"Выберите изображение для Кадра {} (или выберите 3D-вид в выпадающем списке)".format(s_idx + 1)
-        dlg.Filter = u"Изображения (*.png;*.jpg;*.jpeg;*.bmp;*.webp)|*.png;*.jpg;*.jpeg;*.bmp;*.webp|Все файлы (*.*)|*.*"
+        dlg.Title = u"Select Image File for Scene #{}".format(s_idx + 1)
+        dlg.Filter = u"Images (*.png;*.jpg;*.jpeg;*.bmp;*.webp)|*.png;*.jpg;*.jpeg;*.bmp;*.webp|All Files (*.*)|*.*"
 
         slot = self.slots[s_idx]
         init_dir = u""
@@ -5602,7 +5889,7 @@ class ChutesRevitStudioForm(Form):
         if self.pic_result.Image is not None or (self.result_image_path and File.Exists(self.result_image_path)):
             show_full_image_window(
                 self.result_image_path,
-                u"Превью 4: Результат AI — " + u_str(self.selected_model_info.get("id", u"Chutes.ai")),
+                u"AI Render Result — " + u_str(self.selected_model_info.get("id", u"Chutes.ai")),
                 live_bitmap=self.pic_result.Image,
             )
 
@@ -5616,7 +5903,7 @@ class ChutesRevitStudioForm(Form):
 
     def _on_browse_out_dir(self, sender, args):
         dlg = FolderBrowserDialog()
-        dlg.Description = u"Выберите папку (Vault) для сохранения AI-рендеров"
+        dlg.Description = u"Select output folder (Vault) for saving AI renders"
         dlg.SelectedPath = u_str(self.txt_out_dir.Text)
         if dlg.ShowDialog() == DialogResult.OK:
             self.txt_out_dir.Text = u_str(dlg.SelectedPath)
@@ -5630,7 +5917,7 @@ class ChutesRevitStudioForm(Form):
             p_path = slot["preview_path"] or slot["file_path"]
             if slot["enabled"] and p_path and File.Exists(p_path):
                 inputs_for_cmp.append(
-                    (u"Кадр {} ({})".format(s_idx + 1, self._get_slot_short_description(s_idx)), p_path)
+                    (u"Scene #{} ({})".format(s_idx + 1, self._get_slot_short_description(s_idx)), p_path)
                 )
                 seen_slots.add(s_idx)
 
@@ -5641,7 +5928,7 @@ class ChutesRevitStudioForm(Form):
             p_path = slot["preview_path"] or slot["file_path"]
             if p_path and File.Exists(p_path):
                 inputs_for_cmp.append(
-                    (u"Кадр {} ({})".format(s_idx + 1, self._get_slot_short_description(s_idx)), p_path)
+                    (u"Scene #{} ({})".format(s_idx + 1, self._get_slot_short_description(s_idx)), p_path)
                 )
 
         if self.result_image_path and File.Exists(self.result_image_path):
@@ -5660,6 +5947,22 @@ class ChutesRevitStudioForm(Form):
                 return self._get_slot_short_description(s_idx)
         return u"AI Render"
 
+    def _get_scene1_name_for_file(self):
+        """Возвращает имя вида или файла из Scene #1 (или следующего активного слота) для имени выходного файла."""
+        slot0 = self.slots[0]
+        if slot0["source_type"] == "file" and slot0["file_path"]:
+            return Path.GetFileNameWithoutExtension(slot0["file_path"])
+        if slot0["source_type"] == "view" and slot0["view_name"]:
+            return slot0["view_name"]
+        for s_idx in (1, 2):
+            st = self.slots[s_idx]
+            if st["enabled"]:
+                if st["source_type"] == "file" and st["file_path"]:
+                    return Path.GetFileNameWithoutExtension(st["file_path"])
+                if st["source_type"] == "view" and st["view_name"]:
+                    return st["view_name"]
+        return u"Scene1"
+
     # --------------------------------------------------------------------------
     # ЗАПУСК ЭКСПОРТА АКТИВНЫХ КАДРОВ (1..3) И AI-ГЕНЕРАЦИИ ("START | НАЧАТЬ")
     # --------------------------------------------------------------------------
@@ -5667,8 +5970,8 @@ class ChutesRevitStudioForm(Form):
         api_key = u_str(self.txt_api_key.Text).strip()
         if not api_key:
             MessageBox.Show(
-                u"Пожалуйста, введите API Key (например, cpk_...) в разделе 1 и при необходимости сохраните профиль.",
-                u"Требуется API Key",
+                u"Please enter your API Key (e.g. cpk_...) in section I and click Save if needed",
+                u"API Key Required",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning,
             )
@@ -5735,21 +6038,23 @@ class ChutesRevitStudioForm(Form):
                     if slot["source_type"] == "view":
                         target_view = slot["view_obj"]
                         if target_view is None or self.doc is None:
-                            raise Exception(u"Кадр {}: выбранный вид Revit недоступен.".format(s_idx + 1))
+                            raise Exception(u"Scene #{}: selected Revit view is unavailable".format(s_idx + 1))
 
                         self.log_step(
-                            u"[1/4] Кадр {}: экспорт вида '{}' из Revit ({} px)...".format(
+                            u"[1/4] Scene #{}: exporting Revit view '{}' ({} px)...".format(
                                 s_idx + 1, slot["view_name"], export_px
                             ),
                             progress_val=10 + s_idx * 8,
                             status_color=self.col_accent,
                         )
-                        prefix_str = u"slot{}_view".format(s_idx + 1)
+                        prefix_str = u"slot{}_{}".format(
+                            s_idx + 1, sanitize_filename_part(slot["view_name"], u"view")
+                        )
                         exp_path = self.revit_invoker.run(
                             lambda: export_revit_view_to_png(
                                 self.doc,
                                 target_view,
-                                out_dir,
+                                self.preview_temp_dir,
                                 pixel_size=export_px,
                                 file_prefix=prefix_str,
                             )
@@ -5768,15 +6073,15 @@ class ChutesRevitStudioForm(Form):
                             self.slot_placeholders[s_idx].Visible = False
 
                         b64_images_list.append(file_to_base64_str(exp_path, max_side_limit=export_px))
-                        active_labels.append(u"#{}:Вид({})".format(s_idx + 1, slot["view_name"]))
+                        active_labels.append(u"#{}:View({})".format(s_idx + 1, slot["view_name"]))
 
                     elif slot["source_type"] == "file":
                         f_path = slot["file_path"]
                         if not f_path or not File.Exists(f_path):
-                            raise Exception(u"Кадр {}: файл '{}' не найден.".format(s_idx + 1, f_path))
+                            raise Exception(u"Scene #{}: file '{}' not found".format(s_idx + 1, f_path))
 
                         self.log_step(
-                            u"[1/4] Кадр {}: чтение и оптимизация файла '{}'...".format(
+                            u"[1/4] Scene #{}: reading and optimizing file '{}'...".format(
                                 s_idx + 1, Path.GetFileName(f_path)
                             ),
                             progress_val=10 + s_idx * 8,
@@ -5788,7 +6093,7 @@ class ChutesRevitStudioForm(Form):
                             dimension_ref_path = f_path
 
                         b64_images_list.append(file_to_base64_str(f_path, max_side_limit=max(1280, export_px)))
-                        active_labels.append(u"#{}:Файл({})".format(s_idx + 1, Path.GetFileName(f_path)))
+                        active_labels.append(u"#{}:File({})".format(s_idx + 1, Path.GetFileName(f_path)))
 
             # Если выбрана текстовая модель (Txt2Img), но в слотах уже есть превью — берём его для пропорций кадра
             if not dimension_ref_path:
@@ -5802,7 +6107,7 @@ class ChutesRevitStudioForm(Form):
             # Если выбрана Img2Img-модель (Qwen-Image-Edit-2511), но кадр ещё не был отправлен — проверяем наличие
             if model_accepts_img and len(b64_images_list) == 0:
                 raise Exception(
-                    u"Для модели редактирования '{}' необходимо выбрать хотя бы один 3D-вид или файл в разделе 3 (Кадр 1) и отметить галочку отправки кадров.".format(
+                    u"Editing model '{}' requires at least one active scene in section III (Scene #1) and Send Scene Images [Base64] enabled".format(
                         u_str(model_info_curr.get("id", u"Qwen-Image-Edit-2511"))
                     )
                 )
@@ -5830,7 +6135,7 @@ class ChutesRevitStudioForm(Form):
                     pass
 
             self.log_step(
-                u"[2/4] Размер: {}x{} px | CFG: {} | Steps: {} | Seed: {} | Кадров: {}...".format(
+                u"[2/4] Resolution: {}x{} px | CFG: {} | Steps: {} | Seed: {} | Scenes: {}".format(
                     target_w, target_h, guidance_val, steps_val, seed_val, len(b64_images_list)
                 ),
                 progress_val=38,
@@ -5856,7 +6161,7 @@ class ChutesRevitStudioForm(Form):
             model_id = u_str(model_info_curr.get("id", u"Chutes.ai"))
             imgs_info_str = u", ".join(active_labels) if active_labels else u"txt2img"
             self.log_step(
-                u"[3/4] Отправка в {} ({}x{}, steps={}, cfg={}, seed={}, режим: [{}])...".format(
+                u"[3/4] Sending to {} ({}x{}, steps={}, cfg={}, seed={}, mode: [{}])...".format(
                     model_id, target_w, target_h, steps_val, guidance_val, seed_val, imgs_info_str
                 ),
                 progress_val=50,
@@ -5871,9 +6176,17 @@ class ChutesRevitStudioForm(Form):
             for attempt_idx in range(1, max_busy_attempts + 1):
                 worker_state = {"done": False, "status": -1, "result": u""}
 
+                scene1_label_for_file = self._get_scene1_name_for_file()
+                output_base_name = build_render_output_base_name(model_id, scene1_label_for_file, seed_val)
+
                 def _bg_request():
                     st, res = send_image_generation_request(
-                        endpoint_url, api_key, payload, out_dir, model_info=model_info_curr
+                        endpoint_url,
+                        api_key,
+                        payload,
+                        out_dir,
+                        model_info=model_info_curr,
+                        base_file_name=output_base_name,
                     )
                     worker_state["status"] = st
                     worker_state["result"] = res
@@ -5889,11 +6202,11 @@ class ChutesRevitStudioForm(Form):
                     dyn_prog = min(95, 50 + int(elapsed * 2.5))
                     self.progress_bar.Value = dyn_prog
                     att_note = (
-                        u" [попытка {}/{}]".format(attempt_idx, max_busy_attempts)
+                        u" [attempt {}/{}]".format(attempt_idx, max_busy_attempts)
                         if max_busy_attempts > 1 and attempt_idx > 1
                         else u""
                     )
-                    self.lbl_stage.Text = u"[3/4] Генерация на сервере {}{} ({}x{})... Прошло {:.1f} сек.".format(
+                    self.lbl_stage.Text = u"[3/4] Generating on {}{} ({}x{})... Elapsed {:.1f}s".format(
                         model_id, att_note, target_w, target_h, elapsed
                     )
                     Application.DoEvents()
@@ -5914,7 +6227,7 @@ class ChutesRevitStudioForm(Form):
                 if is_busy_500 and attempt_idx < max_busy_attempts:
                     wait_sec = 2.5
                     self.log_step(
-                        u"Свободный GPU-воркер '{}' на Chutes.ai занят (HTTP {}), ожидание {} сек. перед повтором ({}/{})...".format(
+                        u"GPU worker for '{}' is busy (HTTP {}), waiting {}s before reconnect ({}/{})...".format(
                             model_id, http_status, wait_sec, attempt_idx + 1, max_busy_attempts
                         ),
                         progress_val=55,
@@ -5965,11 +6278,11 @@ class ChutesRevitStudioForm(Form):
                     "slot3_image": exported_slot_paths[2],
                     "result_image": self.result_image_path,
                 }
-                self.lbl_preview_meta.Text = u"Готово за {} сек. ({}x{}, seed={}, кадров: {}/3)! Кликните на превью для увеличения.".format(
+                self.lbl_preview_meta.Text = u"Completed in {}s ({}x{}, seed={}, scenes: {}/3) — click preview to enlarge".format(
                     elapsed_sec, target_w, target_h, seed_val, len(b64_images_list)
                 )
                 self.log_step(
-                    u"[4/4] Успешно! Рендер сохранён: {} ({} сек., кадров: {})".format(
+                    u"[4/4] Completed — render saved to {} ({}s, scenes: {})".format(
                         self.result_image_path, elapsed_sec, len(b64_images_list)
                     ),
                     progress_val=100,
@@ -5984,14 +6297,14 @@ class ChutesRevitStudioForm(Form):
                     "error": u_str(result_val),
                 }
                 self.log_step(
-                    u"Ошибка генерации (HTTP {}): {}".format(http_status, u_str(result_val)[:240]),
+                    u"Generation error (HTTP {}): {}".format(http_status, u_str(result_val)[:240]),
                     progress_val=0,
                     status_color=Color.FromArgb(220, 38, 38),
                 )
 
         except Exception as ex:
             self.status_message = u"ERROR: {}".format(u_str(ex))
-            self.log_step(u"Ошибка выполнения: {}".format(u_str(ex)), progress_val=0, status_color=Color.FromArgb(220, 38, 38))
+            self.log_step(u"Execution error: {}".format(u_str(ex)), progress_val=0, status_color=Color.FromArgb(220, 38, 38))
         finally:
             self.btn_generate.Enabled = True
             self.Cursor = Cursors.Default
