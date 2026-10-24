@@ -10,7 +10,7 @@
 
 ## RU
 
-[Код приложения](https://github.com/alxiskra/ChutesAI.RevitRender/blob/main/alxiskra.ChutesAI.RevitRender.py) запускается через среду исполнения Dynamo путем его помещения в стандартный узел `PythonScript`. 
+[Код приложения](https://github.com/alxiskra/ChutesAI.RevitRender/blob/main/alxiskra.ChutesAI.RevitRender.py) запускается через среду исполнения Dynamo путем его помещения в стандартный узел `PythonScript`
 
 ### Возможности
 
