@@ -88,4 +88,5 @@ Configuration profiles are saved in `profiles.json` in the following directory:
 [▶ Watch the ChutesAI.RevitRender demo / Смотреть демонстрацию](https://github.com/user-attachments/assets/99215513-72f9-4773-a748-1fc6b66642f8)
 
 Данный проект является независимой open-source разработкой, не аффилированной с Autodesk, Inc. или Chutes.ai.
+
 This is an independent open-source project, not affiliated with Autodesk, Inc. or Chutes.ai.
